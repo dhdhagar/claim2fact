@@ -23,6 +23,8 @@ import blink.candidate_ranking.utils as utils
 from blink.biencoder.zeshel_utils import WORLDS, load_entity_dict_zeshel, Stats
 from blink.common.params import BlinkParser
 
+from IPython import embed
+
 
 def load_entity_dict(logger, params, is_zeshel):
     if is_zeshel:
@@ -126,7 +128,7 @@ def encode_candidate(
     logger,
     is_zeshel,
 ):
-    if zeshel:
+    if is_zeshel:
         src = 0
         cand_encode_dict = {}
         for src, cand_pool in candidate_pool.items():
@@ -137,7 +139,7 @@ def encode_candidate(
                 encode_batch_size,
                 silent,
                 logger,
-                is_zeshel = False,
+                False,
             )
             cand_encode_dict[src] = cand_pool_encode
         return cand_encode_dict
@@ -238,14 +240,12 @@ def main(params):
 
     if candidate_encoding is None:
         candidate_encoding = encode_candidate(
-            params,
             reranker,
             candidate_pool,
             params["encode_batch_size"],
             silent=params["silent"],
             logger=logger,
             is_zeshel = params.get("zeshel", None)
-            
         )
 
         if cand_encode_path is not None:

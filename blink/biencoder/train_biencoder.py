@@ -299,7 +299,9 @@ def main(params):
 
     if params["evaluate"]:
         params["path_to_model"] = model_output_path
-        evaluate(params, logger=logger)
+        results = evaluate(
+            reranker, valid_dataloader, params, device=device, logger=logger,
+        )
 
 
 if __name__ == "__main__":

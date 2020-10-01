@@ -9,7 +9,7 @@
 import json
 import torch
 
-DOC_PATH = "/private/home/ledell/zeshel/data/documents/"
+DOC_PATH = "/mnt/nfs/scratch1/rangell/coref_entity_linking/data/zeshel/documents/"
 
 WORLDS = [
     'american_football',
@@ -34,12 +34,22 @@ world_to_id = {src : k for k, src in enumerate(WORLDS)}
 
 
 def load_entity_dict_zeshel(logger, params):
+    train_worlds = list(range(0, 8))
+    valid_worlds = list(range(8, 12))
+    test_worlds = list(range(12, 16))
+
+    mode_worlds = valid_worlds
+    if params.get("mode", None) == 'train':
+        mode_worlds = train_worlds
+    elif params.get("mode", None) == 'test':
+        mode_worlds = test_worlds
+
     entity_dict = {}
     for i, src in enumerate(WORLDS):
-        if i < 8 or i > 11:
+
+        if i not in mode_worlds:
             continue
-        #if i >=8 :
-        #    continue
+
         fname = DOC_PATH + src + ".json"
         cur_dict = {}
         doc_list = []

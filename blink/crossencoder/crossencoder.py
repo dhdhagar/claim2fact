@@ -32,6 +32,8 @@ from blink.common.ranker_base import BertEncoder, get_model_obj
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import ENT_START_TAG, ENT_END_TAG, ENT_TITLE_TAG
 
+from IPython import embed
+
 
 def load_crossencoder(params):
     # Init model

@@ -13,6 +13,8 @@ from tqdm import tqdm
 import blink.candidate_ranking.utils as utils
 from blink.biencoder.zeshel_utils import WORLDS, Stats
 
+from IPython import embed
+
 
 def get_topk_predictions(
     reranker,
@@ -75,6 +77,8 @@ def get_topk_predictions(
                 )
                 _, inds = new_scores.topk(top_k)
                 inds = inds[0]
+            else:
+                src = old_src
 
             pointer = -1
             for j in range(top_k):

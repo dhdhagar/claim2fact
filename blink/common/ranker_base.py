@@ -6,6 +6,8 @@
 #
 from torch import nn
 
+from IPython import embed
+
 
 def get_model_obj(model):
     model = model.module if hasattr(model, "module") else model

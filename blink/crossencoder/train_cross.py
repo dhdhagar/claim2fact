@@ -36,6 +36,8 @@ from blink.biencoder.zeshel_utils import DOC_PATH, WORLDS, world_to_id
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
 
+from IPython import embed
+
 
 logger = None
 
@@ -170,7 +172,7 @@ def main(params):
     fname = os.path.join(params["data_path"], "train.t7")
     train_data = torch.load(fname)
     context_input = train_data["context_vecs"]
-    candidate_input = train_data["cand_vecs"]
+    candidate_input = train_data["candidate_vecs"]
     label_input = train_data["labels"]
     if params["debug"]:
         max_n = 200
@@ -195,7 +197,7 @@ def main(params):
     fname = os.path.join(params["data_path"], "valid.t7")
     valid_data = torch.load(fname)
     context_input = valid_data["context_vecs"][:max_n]
-    candidate_input = valid_data["cand_vecs"][:max_n]
+    candidate_input = valid_data["candidate_vecs"][:max_n]
     label_input = valid_data["labels"][:max_n]
 
     context_input = modify(context_input, candidate_input, max_seq_length)

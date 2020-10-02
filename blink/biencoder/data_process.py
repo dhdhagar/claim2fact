@@ -170,7 +170,8 @@ def process_mention_data(
             logger.info(
                 "Label ids : " + " ".join([str(v) for v in sample["label"]["ids"]])
             )
-            logger.info("Src : %d" % sample["src"][0])
+            if use_world:
+                logger.info("Src : %d" % sample["src"][0])
             logger.info("Label_id : %d" % sample["label_idx"][0])
 
     context_vecs = torch.tensor(

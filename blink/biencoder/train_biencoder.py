@@ -35,6 +35,8 @@ from blink.biencoder.zeshel_utils import DOC_PATH, WORLDS, world_to_id
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
 
+from IPython import embed
+
 
 logger = None
 
@@ -58,7 +60,10 @@ def evaluate(
 
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
-        context_input, candidate_input, _, _ = batch
+        if params["zeshel"]:
+            context_input, candidate_input, _, _ = batch
+        else:
+            context_input, candidate_input, _ = batch
         with torch.no_grad():
             eval_loss, logits = reranker(context_input, candidate_input)
 
@@ -226,7 +231,10 @@ def main(params):
 
         for step, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
-            context_input, candidate_input, _, _ = batch
+            if params["zeshel"]:
+                context_input, candidate_input, _, _ = batch
+            else:
+                context_input, candidate_input, _ = batch
             loss, _ = reranker(context_input, candidate_input)
 
             # if n_gpu > 1:

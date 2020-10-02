@@ -85,8 +85,7 @@ class BlinkParser(argparse.ArgumentParser):
         )
         parser.add_argument(
             "--zeshel",
-            default=True,
-            type=bool,
+            action="store_true",
             help="Whether the dataset is from zeroshot.",
         )
 

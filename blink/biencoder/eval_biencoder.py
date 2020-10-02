@@ -253,7 +253,6 @@ def main(params):
             logger.info("Saving candidate encoding to file " + cand_encode_path)
             torch.save(cand_encode_path, candidate_encoding)
 
-
     test_samples = utils.read_dataset(params["mode"], params["data_path"])
     logger.info("Read %d test samples." % len(test_samples))
    

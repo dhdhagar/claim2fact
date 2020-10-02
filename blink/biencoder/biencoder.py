@@ -144,7 +144,7 @@ class BiEncoderRanker(torch.nn.Module):
         # return embedding_cands
 
     # Score candidates given context input and label input
-    # If cand_encs is provided (pre-computed), cand_ves is ignored
+    # If cand_encs is provided (pre-computed), cand_vecs is ignored
     def score_candidate(
         self,
         text_vecs,

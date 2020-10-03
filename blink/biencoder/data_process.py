@@ -159,7 +159,7 @@ def process_mention_data(
 
         processed_samples.append(record)
 
-    if debug and logger:
+    if logger:
         logger.info("====Processed samples: ====")
         for sample in processed_samples[:5]:
             logger.info("Context tokens : " + " ".join(sample["context"]["tokens"]))

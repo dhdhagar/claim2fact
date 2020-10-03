@@ -260,6 +260,12 @@ class BlinkParser(argparse.ArgumentParser):
             help="Batch size for encoding."
         )
         parser.add_argument(
+            "--entity_dict_path",
+            default=None,
+            type=str,
+            help="Path for entity dict when not zeshel",
+        )
+        parser.add_argument(
             "--cand_pool_path",
             default=None,
             type=str,

@@ -186,6 +186,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--eval_batch_size", default=8, type=int,
             help="Total batch size for evaluation.",
         )
+        parser.add_argument(
+            "--example_bundle_size", default=32, type=int,
+            help="Total batch size for evaluation.",
+        )
         parser.add_argument("--max_grad_norm", default=1.0, type=float)
         parser.add_argument(
             "--learning_rate",

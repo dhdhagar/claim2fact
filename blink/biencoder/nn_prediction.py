@@ -51,14 +51,15 @@ def get_topk_predictions(
     for i in range(world_size):
         stats[i] = Stats(top_k)
 
-    embed()
-    exit()
-    
     oid = 0
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
-        context_input, _, srcs, label_ids = batch
-        src = srcs[0].item()
+        if len(batch) == 4:
+            context_input, _, srcs, label_ids = batch
+            src = srcs[0].item()
+        elif len(batch) == 3:
+            context_input, _, label_ids = batch
+            src = 0
         scores = reranker.score_candidate(
             context_input, 
             None, 

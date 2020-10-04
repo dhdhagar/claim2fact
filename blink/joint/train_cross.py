@@ -126,6 +126,70 @@ def get_scheduler(params, optimizer, len_train_data, logger):
     return scheduler
 
 
+def create_train_dataloader(
+    params,
+    contexts,
+    pos_cands,
+    pos_cand_uids,
+    knn_cands,
+    knn_cand_uids
+):
+
+    example_bundle_size = params["example_bundle_size"]
+    context_input = None
+
+    for i in trange(contexts.shape[0]):
+        if len(pos_cands[i]) == 0:
+            continue
+        ex_pos_cands = pos_cands[i]
+        if len(ex_pos_cands.shape) == 1:
+            ex_pos_cands = ex_pos_cands.unsqueeze(0)
+        for j in range(ex_pos_cands.shape[0]):
+            candidate_bundle = ex_pos_cands[j].unsqueeze(0)
+            k = 0
+            while candidate_bundle.shape[0] < example_bundle_size:
+                k %= knn_cand_uids.shape[1]
+                if knn_cand_uids[i][k].item() in pos_cand_uids[i]:
+                    k += 1
+                    continue
+                candidate_bundle = torch.cat(
+                    (candidate_bundle, knn_cands[i][k].unsqueeze(0))
+                )
+                k += 1
+
+            if context_input is None:
+                context_input = modify(
+                    contexts[i].unsqueeze(0),
+                    candidate_bundle.unsqueeze(0),
+                    params["max_seq_length"]
+                )
+            else:
+                context_input = torch.cat(
+                    (context_input,
+                     modify(contexts[i].unsqueeze(0),
+                            candidate_bundle.unsqueeze(0),
+                            params["max_seq_length"]))
+                )
+
+        if params["debug"]:
+            max_n = 200
+            if context_input.shape[0] >= max_n:
+                context_input = context_input[:max_n]
+                break
+
+    label_input = torch.zeros((context_input.shape[0],))
+    train_tensor_data = TensorDataset(context_input, label_input)
+    train_sampler = RandomSampler(train_tensor_data)
+
+    train_dataloader = DataLoader(
+        train_tensor_data, 
+        sampler=train_sampler, 
+        batch_size=params["train_batch_size"]
+    )
+
+    return train_dataloader
+
+
 def main(params):
     model_output_path = params["output_path"]
     if not os.path.exists(model_output_path):
@@ -133,14 +197,16 @@ def main(params):
     logger = utils.get_logger(params["output_path"])
 
     # Init model
-    reranker = CrossEncoderRanker(params)
-    tokenizer = reranker.tokenizer
-    model = reranker.model
+    ctxt_reranker = CrossEncoderRanker(params)
+    cand_reranker = CrossEncoderRanker(params)
+    tokenizer = ctxt_reranker.tokenizer
+    ctxt_model = ctxt_reranker.model
+    cand_model = cand_reranker.model
 
     # utils.save_model(model, tokenizer, model_output_path)
 
-    device = reranker.device
-    n_gpu = reranker.n_gpu
+    device = ctxt_reranker.device
+    n_gpu = ctxt_reranker.n_gpu
 
     if params["gradient_accumulation_steps"] < 1:
         raise ValueError(
@@ -163,33 +229,33 @@ def main(params):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if reranker.n_gpu > 0:
+    if ctxt_reranker.n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
-    max_seq_length = params["max_seq_length"]
     context_length = params["max_context_length"]
-    
-    fname = os.path.join(params["data_path"], "train.t7")
+
+    # create train dataloaders
+    fname = os.path.join(params["data_path"], "joint_train.t7")
     train_data = torch.load(fname)
-    context_input = train_data["context_vecs"]
-    candidate_input = train_data["candidate_vecs"]
-    label_input = train_data["labels"]
-    if params["debug"]:
-        max_n = 200
-        context_input = context_input[:max_n]
-        candidate_input = candidate_input[:max_n]
-        label_input = label_input[:max_n]
-
-    context_input = modify(context_input, candidate_input, max_seq_length)
-
-    train_tensor_data = TensorDataset(context_input, label_input)
-    train_sampler = RandomSampler(train_tensor_data)
-
-    train_dataloader = DataLoader(
-        train_tensor_data, 
-        sampler=train_sampler, 
-        batch_size=params["train_batch_size"]
+    ctxt_train_dataloader = create_train_dataloader(
+        params,
+        train_data["contexts"],
+        train_data["pos_coref_ctxts"],
+        train_data["pos_coref_ctxt_uids"],
+        train_data["knn_ctxts"],
+        train_data["knn_ctxt_uids"]
     )
+    cand_train_dataloader = create_train_dataloader(
+        params,
+        train_data["contexts"],
+        train_data["pos_cands"],
+        train_data["pos_cand_uids"],
+        train_data["knn_cands"],
+        train_data["knn_cand_uids"]
+    )
+    
+    embed()
+    exit()
 
     max_n = 2048
     if params["debug"]:

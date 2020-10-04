@@ -50,6 +50,9 @@ def get_topk_predictions(
 
     for i in range(world_size):
         stats[i] = Stats(top_k)
+
+    embed()
+    exit()
     
     oid = 0
     for step, batch in enumerate(iter_):

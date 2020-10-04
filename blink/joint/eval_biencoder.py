@@ -19,7 +19,7 @@ from pytorch_transformers.tokenization_bert import BertTokenizer
 
 from blink.biencoder.biencoder import BiEncoderRanker
 import blink.biencoder.data_process as data
-import blink.biencoder.nn_prediction as nnquery
+import blink.joint.nn_prediction as nnquery
 import blink.candidate_ranking.utils as utils
 from blink.biencoder.zeshel_utils import WORLDS, load_entity_dict_zeshel, Stats
 from blink.common.params import BlinkParser
@@ -162,9 +162,9 @@ def encode_candidate(
         cands = cands.to(device)
         cand_encode = reranker.encode_candidate(cands)
         if cand_encode_list is None:
-            cand_encode_list = cand_encode
+            cand_encode_list = cand_encode.cpu()
         else:
-            cand_encode_list = torch.cat((cand_encode_list, cand_encode))
+            cand_encode_list = torch.cat((cand_encode_list, cand_encode.cpu()))
 
     return cand_encode_list
 
@@ -220,6 +220,7 @@ def encode_context(
     else:
         iter_ = tqdm(context_dataloader)
 
+    context_input_list = None
     context_encode_list = None
     src_list = None
     label_id_list = None
@@ -228,45 +229,62 @@ def encode_context(
         context_input, _, srcs, label_ids = batch
         context_encode = reranker.encode_context(context_input)
         if context_encode_list is None:
-            context_encode_list = context_encode
-            src_list = srcs
-            label_id_list = label_ids
+            context_input_list = context_input.cpu()
+            context_encode_list = context_encode.cpu()
+            src_list = srcs.cpu()
+            label_id_list = label_ids.cpu()
         else:
-            context_encode_list = torch.cat(
-                    (context_encode_list, context_encode)
+            context_input_list = torch.cat(
+                    (context_input_list, context_input.cpu())
             )
-            src_list = torch.cat((src_list, srcs))
-            label_id_list = torch.cat((label_id_list, label_ids))
+            context_encode_list = torch.cat(
+                    (context_encode_list, context_encode.cpu())
+            )
+            src_list = torch.cat((src_list, srcs.cpu()))
+            label_id_list = torch.cat((label_id_list, label_ids.cpu()))
 
     # label contexts with cand uids
-    srcs = srcs.squeeze(1).cpu().numpy().tolist()
-    label_ids = label_ids.squeeze(1).cpu().numpy().tolist()
+    srcs = src_list.squeeze(1).numpy().tolist()
+    label_ids = label_id_list.squeeze(1).numpy().tolist()
     label_uids = [cand_uid_map[k] for k in zip(srcs, label_ids)]
 
+    # structure dictionaries (zeshel only)
+    # FIXME: get this to work for non-zeshel
+    context_input_dict = defaultdict(list)
     context_encode_dict = defaultdict(list)
     context_label_uids = defaultdict(list)
-    for src, ctxt_vec, lbl_uid in zip(srcs, context_encode_list, label_uids):
+    _iter = zip(srcs, context_input_list, context_encode_list, label_uids)
+    for src, ctxt_ids, ctxt_vec, lbl_uid in _iter:
+        context_input_dict[src].append(ctxt_ids)
         context_encode_dict[src].append(ctxt_vec)
         context_label_uids[src].append(lbl_uid)
 
     for src in list(context_encode_dict.keys()):
+        context_input_dict[src] = torch.stack(tuple(context_input_dict[src]))
         context_encode_dict[src] = torch.stack(tuple(context_encode_dict[src]))
         context_label_uids[src] = torch.tensor(context_label_uids[src])
 
-    return dict(context_encode_dict), dict(context_label_uids)
+    context_input_dict = dict(context_input_dict)
+    context_encode_dict = dict(context_encode_dict)
+    context_label_uids = dict(context_label_uids)
+    return context_input_dict, context_encode_dict, context_label_uids
 
 
-def get_cand_uid_map(params, candidate_encoding):
-    if params.get("zeshel", None):
-        uid = 0
-        cand_uid_map = {}
-        for src, encoding in candidate_encoding.items():
-            cand_uid_map.update({(src, i) : uid+i for i in range(encoding.shape[0])})
-            uid = len(cand_uid_map.keys())
+def get_uid_map(
+    encoding,
+    start_offset=0,
+    is_zeshel=False
+):
+    if is_zeshel:
+        uid = start_offset
+        uid_map = {}
+        for src, vecs in encoding.items():
+            uid_map.update({(src, i) : uid+i for i in range(vecs.shape[0])})
+            uid = len(uid_map.keys())
     else:
-        cand_uid_map = {i : i for i in range(len(candidate_encoding))}
+        uid_map = {i : i+start_offset for i in range(len(encoding))}
 
-    return cand_uid_map
+    return uid_map
 
 
 def main(params):
@@ -282,105 +300,95 @@ def main(params):
     
     device = reranker.device
     
+    # candidate encoding is not pre-computed. 
+    # load/generate candidate pool to compute candidate encoding.
+    cand_pool_path = params.get("cand_pool_path", None)
+    candidate_pool = load_or_generate_candidate_pool(
+        tokenizer,
+        params,
+        logger,
+        cand_pool_path,
+    )       
 
-    # TODO: temporary development cache
-    dev_cache_file = 'dev_cache.t7'
-    if not os.path.isfile(dev_cache_file):
-        cand_encode_path = params.get("cand_encode_path", None)
-        
-        # candidate encoding is not pre-computed. 
-        # load/generate candidate pool to compute candidate encoding.
-        cand_pool_path = params.get("cand_pool_path", None)
-        candidate_pool = load_or_generate_candidate_pool(
-            tokenizer,
-            params,
-            logger,
-            cand_pool_path,
-        )       
+    cand_encode_path = params.get("cand_encode_path", None)
+    
+    candidate_encoding = None
+    if cand_encode_path is not None:
+        # try to load candidate encoding from path
+        # if success, avoid computing candidate encoding
+        try:
+            logger.info("Loading pre-generated candidate encode path.")
+            candidate_encoding = torch.load(cand_encode_path)
+        except:
+            logger.info("Loading failed. Generating candidate encoding.")
 
-        candidate_encoding = None
-        if cand_encode_path is not None:
-            # try to load candidate encoding from path
-            # if success, avoid computing candidate encoding
-            try:
-                logger.info("Loading pre-generated candidate encode path.")
-                candidate_encoding = torch.load(cand_encode_path)
-            except:
-                logger.info("Loading failed. Generating candidate encoding.")
-
-        if candidate_encoding is None:
-            candidate_encoding = encode_candidate(
-                reranker,
-                candidate_pool,
-                params["encode_batch_size"],
-                silent=params["silent"],
-                logger=logger,
-                is_zeshel = params.get("zeshel", None)
-            )
-
-            if cand_encode_path is not None:
-                # Save candidate encoding to avoid re-compute
-                logger.info("Saving candidate encoding to file " + cand_encode_path)
-                torch.save(candidate_encoding, cand_encode_path)
-
-        test_samples = utils.read_dataset(params["mode"], params["data_path"])
-        logger.info("Read %d test samples." % len(test_samples))
-
-        # get candidate uid map
-        cand_uid_map = get_cand_uid_map(params, candidate_encoding)
-       
-        # generate context embeddings
-        test_data, test_tensor_data = data.process_mention_data(
-            test_samples,
-            tokenizer,
-            params["max_context_length"],
-            params["max_cand_length"],
-            context_key=params['context_key'],
-            silent=params["silent"],
-            logger=logger,
-            debug=params["debug"],
-        )
-        test_sampler = SequentialSampler(test_tensor_data)
-        test_dataloader = DataLoader(
-            test_tensor_data, 
-            sampler=test_sampler, 
-            batch_size=params["encode_batch_size"]
-        )
-        context_encoding, context_label_uids = encode_context(
+    if candidate_encoding is None:
+        candidate_encoding = encode_candidate(
             reranker,
-            test_dataloader,
-            cand_uid_map,
+            candidate_pool,
             params["encode_batch_size"],
             silent=params["silent"],
             logger=logger,
             is_zeshel = params.get("zeshel", None)
         )
 
-        save_dict = {
-            'candidate_encoding' : candidate_encoding,
-            'context_encoding': context_encoding,
-            'context_label_uids' : context_label_uids,
-            'cand_uid_map': cand_uid_map
-        }
-        torch.save(save_dict, dev_cache_file)
-    else:
-        save_dict = torch.load(dev_cache_file)
-        
+        if cand_encode_path is not None:
+            # Save candidate encoding to avoid re-compute
+            logger.info("Saving candidate encoding to file " + cand_encode_path)
+            torch.save(candidate_encoding, cand_encode_path)
 
-    candidate_encoding = save_dict['candidate_encoding']
-    context_encoding = save_dict['context_encoding']
-    context_label_uids = save_dict['context_label_uids']
-    cand_uid_map = save_dict['cand_uid_map']
+    test_samples = utils.read_dataset(params["mode"], params["data_path"])
+    logger.info("Read %d test samples." % len(test_samples))
 
-    embed()
-    exit()
+    # get candidate uid map
+    cand_uid_map = get_uid_map(
+            candidate_encoding,
+            start_offset=0,
+            is_zeshel=params.get("zeshel", None)
+    )
+   
+    # generate context embeddings
+    test_data, test_tensor_data = data.process_mention_data(
+        test_samples,
+        tokenizer,
+        params["max_context_length"],
+        params["max_cand_length"],
+        context_key=params['context_key'],
+        silent=params["silent"],
+        logger=logger,
+        debug=params["debug"],
+    )
+    test_sampler = SequentialSampler(test_tensor_data)
+    test_dataloader = DataLoader(
+        test_tensor_data, 
+        sampler=test_sampler, 
+        batch_size=params["encode_batch_size"]
+    )
+    context_pool, context_encoding, context_label_uids = encode_context(
+        reranker,
+        test_dataloader,
+        cand_uid_map,
+        params["encode_batch_size"],
+        silent=params["silent"],
+        logger=logger,
+        is_zeshel = params.get("zeshel", None)
+    )
+
+    ctxt_uid_map = get_uid_map(
+            context_encoding,
+            start_offset=len(cand_uid_map),
+            is_zeshel=params.get("zeshel", None)
+    )
 
     save_results = params.get("save_topk_result")
     new_data = nnquery.get_topk_predictions(
-        reranker,
-        test_dataloader,
+        context_pool,
+        context_encoding,
+        context_label_uids,
+        ctxt_uid_map,
         candidate_pool,
         candidate_encoding,
+        cand_uid_map,
         params["silent"],
         logger,
         params["top_k"],
@@ -391,7 +399,7 @@ def main(params):
     if save_results: 
         save_data_path = os.path.join(
             params['output_path'], 
-            'candidates_%s_top%d.t7' % (params['mode'], params['top_k'])
+            'joint_candidates_%s_top%d.t7' % (params['mode'], params['top_k'])
         )
         torch.save(new_data, save_data_path)
 

@@ -150,6 +150,7 @@ def create_dataloader(
     evaluate=False
 ):
 
+    max_n = None
     if evaluate:
         max_n = 2048
     if params["debug"]:
@@ -192,7 +193,7 @@ def create_dataloader(
                             params["max_seq_length"]))
                 )
 
-        if context_input.shape[0] >= max_n:
+        if max_n and context_input.shape[0] >= max_n:
             context_input = context_input[:max_n]
             break
 

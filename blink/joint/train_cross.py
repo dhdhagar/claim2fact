@@ -38,23 +38,12 @@ import blink.biencoder.data_process as data
 from blink.biencoder.zeshel_utils import DOC_PATH, WORLDS, world_to_id
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
+from blink.utils import copy_directory
 
 from IPython import embed
 
 
 logger = None
-
-
-# TODO: move this to utils?
-def copy_directory(src, dest):
-    try:
-        shutil.copytree(src, dest)
-    # Directories are the same
-    except shutil.Error as e:
-        print('Directory not copied. Error: %s' % e)
-    # Any error saying that the directory doesn't exist
-    except OSError as e:
-        print('Directory not copied. Error: %s' % e)
 
 
 def modify(context_input, candidate_input, max_seq_length):

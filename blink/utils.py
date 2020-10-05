@@ -8,6 +8,7 @@ import io
 import json
 import os
 import pickle
+import shutil
 
 from segtok.segmenter import split_multi
 
@@ -152,3 +153,15 @@ def get_end2end_pretty_output_file_path(output_folder_path):
     file_name = "pretty.txt"
     path_to_file = os.path.join(output_folder_path, file_name)
     return path_to_file
+
+
+##### Copying helpers #####
+def copy_directory(src, dest):
+    try:
+        shutil.copytree(src, dest)
+    # Directories are the same
+    except shutil.Error as e:
+        print('Directory not copied. Error: %s' % e)
+    # Any error saying that the directory doesn't exist
+    except OSError as e:
+        print('Directory not copied. Error: %s' % e)

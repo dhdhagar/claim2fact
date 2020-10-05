@@ -6,15 +6,18 @@
 #
 import os
 import argparse
+from datetime import datetime
 import pickle
 import torch
 import json
 import sys
 import io
 import random
+import shutil
 import time
 import numpy as np
 
+ 
 from multiprocessing.pool import ThreadPool
 
 from tqdm import tqdm, trange
@@ -42,6 +45,18 @@ from IPython import embed
 logger = None
 
 
+# TODO: move this to utils?
+def copy_directory(src, dest):
+    try:
+        shutil.copytree(src, dest)
+    # Directories are the same
+    except shutil.Error as e:
+        print('Directory not copied. Error: %s' % e)
+    # Any error saying that the directory doesn't exist
+    except OSError as e:
+        print('Directory not copied. Error: %s' % e)
+
+
 def modify(context_input, candidate_input, max_seq_length):
     new_input = []
     context_input = context_input.tolist()
@@ -62,7 +77,18 @@ def modify(context_input, candidate_input, max_seq_length):
     return torch.LongTensor(new_input)
 
 
-def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=True):
+def evaluate(
+    reranker,
+    eval_dataloader,
+    device,
+    logger,
+    context_length,
+    suffix=None,
+    silent=True
+):
+
+    assert suffix is not None
+
     reranker.model.eval()
     if silent:
         iter_ = eval_dataloader
@@ -95,7 +121,7 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
         nb_eval_steps += 1
 
     normalized_eval_accuracy = eval_accuracy / nb_eval_examples
-    logger.info("Eval accuracy: %.5f" % normalized_eval_accuracy)
+    logger.info("Eval accuracy (%s): %.5f" % (suffix, normalized_eval_accuracy))
     results["normalized_accuracy"] = normalized_eval_accuracy
     results["logits"] = all_logits
     return results
@@ -126,17 +152,24 @@ def get_scheduler(params, optimizer, len_train_data, logger):
     return scheduler
 
 
-def create_train_dataloader(
+def create_dataloader(
     params,
     contexts,
     pos_cands,
     pos_cand_uids,
     knn_cands,
-    knn_cand_uids
+    knn_cand_uids,
+    evaluate=False
 ):
 
+    if evaluate:
+        max_n = 2048
+    if params["debug"]:
+        max_n = 200
     example_bundle_size = params["example_bundle_size"]
     context_input = None
+    batch_size = params["eval_batch_size"] if evaluate \
+                    else params["train_batch_size"]
 
     for i in trange(contexts.shape[0]):
         if len(pos_cands[i]) == 0:
@@ -171,30 +204,103 @@ def create_train_dataloader(
                             params["max_seq_length"]))
                 )
 
-        if params["debug"]:
-            max_n = 200
-            if context_input.shape[0] >= max_n:
-                context_input = context_input[:max_n]
-                break
+        if context_input.shape[0] >= max_n:
+            context_input = context_input[:max_n]
+            break
 
-    label_input = torch.zeros((context_input.shape[0],))
+    # labels for each softmax bundle (positive always first)
+    label_input = torch.zeros((context_input.shape[0],), dtype=torch.long)
+
     train_tensor_data = TensorDataset(context_input, label_input)
     train_sampler = RandomSampler(train_tensor_data)
-
     train_dataloader = DataLoader(
         train_tensor_data, 
         sampler=train_sampler, 
-        batch_size=params["train_batch_size"]
+        batch_size=batch_size
     )
-
     return train_dataloader
 
 
+def train_one_epoch(
+    train_dataloader,
+    reranker,
+    optimizer,
+    scheduler,
+    logger,
+    params,
+    epoch_idx,
+    device=None,
+    suffix=None,
+):
+
+    assert suffix is not None
+    context_length = params["max_context_length"]
+    grad_acc_steps = params["gradient_accumulation_steps"]
+    model = reranker.model
+
+    tr_loss = 0
+    results = None
+
+    if params["silent"]:
+        iter_ = train_dataloader
+    else:
+        iter_ = tqdm(train_dataloader, desc="Batch ({})".format(suffix))
+
+    part = 0
+    for step, batch in enumerate(iter_):
+        batch = tuple(t.to(device) for t in batch)
+        context_input, label_input = batch
+        loss, _ = reranker(context_input, label_input, context_length)
+
+        # if n_gpu > 1:
+        #     loss = loss.mean() # mean() to average on multi-gpu.
+
+        if grad_acc_steps > 1:
+            loss = loss / grad_acc_steps
+
+        tr_loss += loss.item()
+
+        if (step + 1) % (params["print_interval"] * grad_acc_steps) == 0:
+            logger.info(
+                "({}) Step {} - epoch {} average loss: {}\n".format(
+                    suffix,
+                    step,
+                    epoch_idx,
+                    tr_loss / (params["print_interval"] * grad_acc_steps),
+                )
+            )
+            tr_loss = 0
+
+        loss.backward()
+
+        if (step + 1) % grad_acc_steps == 0:
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), params["max_grad_norm"]
+            )
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
+
+
 def main(params):
-    model_output_path = params["output_path"]
+
+    # create output dir
+    now = datetime.now()
+    datetime_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+    model_output_path = os.path.join(params["output_path"], datetime_str)
     if not os.path.exists(model_output_path):
         os.makedirs(model_output_path)
-    logger = utils.get_logger(params["output_path"])
+
+    # get logger
+    logger = utils.get_logger(model_output_path)
+
+    # copy blink source and create rerun script
+    blink_copy_path = os.path.join(model_output_path, "blink")
+    copy_directory("blink", blink_copy_path)
+    cmd = sys.argv
+    with open(os.path.join(model_output_path, "rerun.sh"), "w") as f:
+        cmd.insert(0, "python")
+        f.write(" ".join(cmd))
 
     # Init model
     ctxt_reranker = CrossEncoderRanker(params)
@@ -202,8 +308,6 @@ def main(params):
     tokenizer = ctxt_reranker.tokenizer
     ctxt_model = ctxt_reranker.model
     cand_model = cand_reranker.model
-
-    # utils.save_model(model, tokenizer, model_output_path)
 
     device = ctxt_reranker.device
     n_gpu = ctxt_reranker.n_gpu
@@ -222,7 +326,6 @@ def main(params):
     )
     train_batch_size = params["train_batch_size"]
     eval_batch_size = params["eval_batch_size"]
-    grad_acc_steps = params["gradient_accumulation_steps"]
 
     # Fix the random seeds
     seed = params["seed"]
@@ -237,7 +340,7 @@ def main(params):
     # create train dataloaders
     fname = os.path.join(params["data_path"], "joint_train.t7")
     train_data = torch.load(fname)
-    ctxt_train_dataloader = create_train_dataloader(
+    ctxt_train_dataloader = create_dataloader(
         params,
         train_data["contexts"],
         train_data["pos_coref_ctxts"],
@@ -245,7 +348,7 @@ def main(params):
         train_data["knn_ctxts"],
         train_data["knn_ctxt_uids"]
     )
-    cand_train_dataloader = create_train_dataloader(
+    cand_train_dataloader = create_dataloader(
         params,
         train_data["contexts"],
         train_data["pos_cands"],
@@ -254,36 +357,44 @@ def main(params):
         train_data["knn_cand_uids"]
     )
     
-    embed()
-    exit()
-
-    max_n = 2048
-    if params["debug"]:
-        max_n = 200
-    fname = os.path.join(params["data_path"], "valid.t7")
+    fname = os.path.join(params["data_path"], "joint_valid.t7")
     valid_data = torch.load(fname)
-    context_input = valid_data["context_vecs"][:max_n]
-    candidate_input = valid_data["candidate_vecs"][:max_n]
-    label_input = valid_data["labels"][:max_n]
-
-    context_input = modify(context_input, candidate_input, max_seq_length)
-
-    valid_tensor_data = TensorDataset(context_input, label_input)
-    valid_sampler = SequentialSampler(valid_tensor_data)
-
-    valid_dataloader = DataLoader(
-        valid_tensor_data, 
-        sampler=valid_sampler, 
-        batch_size=params["eval_batch_size"]
+    ctxt_valid_dataloader = create_dataloader(
+        params,
+        valid_data["contexts"],
+        valid_data["pos_coref_ctxts"],
+        valid_data["pos_coref_ctxt_uids"],
+        valid_data["knn_ctxts"],
+        valid_data["knn_ctxt_uids"],
+        evaluate=True
+    )
+    cand_valid_dataloader = create_dataloader(
+        params,
+        valid_data["contexts"],
+        valid_data["pos_cands"],
+        valid_data["pos_cand_uids"],
+        valid_data["knn_cands"],
+        valid_data["knn_cand_uids"],
+        evaluate=True
     )
 
     # evaluate before training
-    results = evaluate(
-        reranker,
-        valid_dataloader,
+    ctxt_results = evaluate(
+        ctxt_reranker,
+        ctxt_valid_dataloader,
         device=device,
         logger=logger,
         context_length=context_length,
+        suffix="ctxt",
+        silent=params["silent"],
+    )
+    cand_results = evaluate(
+        cand_reranker,
+        cand_valid_dataloader,
+        device=device,
+        logger=logger,
+        context_length=context_length,
+        suffix="cand",
         silent=params["silent"],
     )
 
@@ -300,100 +411,97 @@ def main(params):
         "device: {} n_gpu: {}, distributed training: {}".format(device, n_gpu, False)
     )
 
-    optimizer = get_optimizer(model, params)
-    scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
+    ctxt_optimizer = get_optimizer(ctxt_model, params)
+    ctxt_scheduler = get_scheduler(
+        params,
+        ctxt_optimizer,
+        len(ctxt_train_dataloader) * train_batch_size,
+        logger
+    )
 
-    model.train()
+    cand_optimizer = get_optimizer(cand_model, params)
+    cand_scheduler = get_scheduler(
+        params,
+        cand_optimizer,
+        len(cand_train_dataloader) * train_batch_size,
+        logger
+    )
 
-    best_epoch_idx = -1
-    best_score = -1
+    ctxt_model.train()
+    cand_model.train()
+
+    ctxt_best_epoch_idx = -1
+    ctxt_best_score = -1
+    cand_best_epoch_idx = -1
+    cand_best_score = -1
 
     num_train_epochs = params["num_train_epochs"]
 
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
-        tr_loss = 0
-        results = None
-
-        if params["silent"]:
-            iter_ = train_dataloader
-        else:
-            iter_ = tqdm(train_dataloader, desc="Batch")
-
-        part = 0
-        for step, batch in enumerate(iter_):
-            batch = tuple(t.to(device) for t in batch)
-            context_input, label_input = batch
-            loss, _ = reranker(context_input, label_input, context_length)
-
-            # if n_gpu > 1:
-            #     loss = loss.mean() # mean() to average on multi-gpu.
-
-            if grad_acc_steps > 1:
-                loss = loss / grad_acc_steps
-
-            tr_loss += loss.item()
-
-            if (step + 1) % (params["print_interval"] * grad_acc_steps) == 0:
-                logger.info(
-                    "Step {} - epoch {} average loss: {}\n".format(
-                        step,
-                        epoch_idx,
-                        tr_loss / (params["print_interval"] * grad_acc_steps),
-                    )
-                )
-                tr_loss = 0
-
-            loss.backward()
-
-            if (step + 1) % grad_acc_steps == 0:
-                torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), params["max_grad_norm"]
-                )
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-
-            if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
-                logger.info("Evaluation on the development dataset")
-                evaluate(
-                    reranker,
-                    valid_dataloader,
-                    device=device,
-                    logger=logger,
-                    context_length=context_length,
-                    silent=params["silent"],
-                )
-                logger.info("***** Saving fine - tuned model *****")
-                epoch_output_folder_path = os.path.join(
-                    model_output_path, "epoch_{}_{}".format(epoch_idx, part)
-                )
-                part += 1
-                utils.save_model(model, tokenizer, epoch_output_folder_path)
-                model.train()
-                logger.info("\n")
-
-        logger.info("***** Saving fine - tuned model *****")
-        epoch_output_folder_path = os.path.join(
-            model_output_path, "epoch_{}".format(epoch_idx)
+        # train ctxt model
+        train_one_epoch(
+            ctxt_train_dataloader,
+            ctxt_reranker,
+            ctxt_optimizer,
+            ctxt_scheduler,
+            logger,
+            params,
+            epoch_idx,
+            device=device,
+            suffix='ctxt'
         )
-        utils.save_model(model, tokenizer, epoch_output_folder_path)
-        # reranker.save(epoch_output_folder_path)
+        # train cand model
+        train_one_epoch(
+            cand_train_dataloader,
+            cand_reranker,
+            cand_optimizer,
+            cand_scheduler,
+            logger,
+            params,
+            epoch_idx,
+            device=device,
+            suffix='cand'
+        )
 
-        output_eval_file = os.path.join(epoch_output_folder_path, "eval_results.txt")
-        results = evaluate(
-            reranker,
-            valid_dataloader,
+        logger.info("***** Saving fine - tuned models *****")
+        ctxt_epoch_output_folder_path = os.path.join(
+            model_output_path, "epoch_{}".format(epoch_idx), "ctxt"
+        )
+        utils.save_model(ctxt_model, tokenizer, ctxt_epoch_output_folder_path)
+        cand_epoch_output_folder_path = os.path.join(
+            model_output_path, "epoch_{}".format(epoch_idx), "cand"
+        )
+        utils.save_model(cand_model, tokenizer, cand_epoch_output_folder_path)
+
+        ctxt_results = evaluate(
+            ctxt_reranker,
+            ctxt_valid_dataloader,
             device=device,
             logger=logger,
             context_length=context_length,
+            suffix="ctxt",
+            silent=params["silent"],
+        )
+        cand_results = evaluate(
+            cand_reranker,
+            cand_valid_dataloader,
+            device=device,
+            logger=logger,
+            context_length=context_length,
+            suffix="cand",
             silent=params["silent"],
         )
 
-        ls = [best_score, results["normalized_accuracy"]]
-        li = [best_epoch_idx, epoch_idx]
+        ctxt_ls = [ctxt_best_score, ctxt_results["normalized_accuracy"]]
+        ctxt_li = [ctxt_best_epoch_idx, epoch_idx]
+        ctxt_best_score = ctxt_ls[np.argmax(ctxt_ls)]
+        ctxt_best_epoch_idx = ctxt_li[np.argmax(ctxt_ls)]
 
-        best_score = ls[np.argmax(ls)]
-        best_epoch_idx = li[np.argmax(ls)]
+        cand_ls = [cand_best_score, cand_results["normalized_accuracy"]]
+        cand_li = [cand_best_epoch_idx, epoch_idx]
+        cand_best_score = cand_ls[np.argmax(cand_ls)]
+        cand_best_epoch_idx = cand_li[np.argmax(cand_ls)]
+
         logger.info("\n")
 
     execution_time = (time.time() - time_start) / 60
@@ -403,14 +511,29 @@ def main(params):
     )
     logger.info("The training took {} minutes\n".format(execution_time))
 
-    # save the best model in the parent_dir
-    logger.info("Best performance in epoch: {}".format(best_epoch_idx))
-    params["path_to_model"] = os.path.join(
-        model_output_path, "epoch_{}".format(best_epoch_idx)
+    # save the best models
+    logger.info(
+        "Best ctxt performance in epoch: {}".format(ctxt_best_epoch_idx)
     )
-    # utils.save_model(reranker.model, tokenizer, model_output_path)
-    # reranker = utils.get_biencoder(params)
-    # reranker.save(model_output_path)
+    best_ctxt_model_path = os.path.join(
+        model_output_path, "epoch_{}".format(ctxt_best_epoch_idx), "ctxt"
+    )
+    logger.info(
+        "Best cand performance in epoch: {}".format(cand_best_epoch_idx)
+    )
+    best_cand_model_path = os.path.join(
+        model_output_path, "epoch_{}".format(cand_best_epoch_idx), "cand"
+    )
+
+    copy_directory(
+        best_ctxt_model_path,
+        os.path.join(model_output_path, "best_epoch", "ctxt")
+    )
+    copy_directory(
+        best_cand_model_path,
+        os.path.join(model_output_path, "best_epoch", "cand")
+    )
+
 
 
 if __name__ == "__main__":

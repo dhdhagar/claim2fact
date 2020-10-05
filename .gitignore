@@ -266,3 +266,5 @@ dmypy.json
 
 # rangell
 exp/
+.*.swo
+.*.swp

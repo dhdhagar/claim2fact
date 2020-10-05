@@ -13,7 +13,6 @@ import json
 import sys
 import io
 import random
-import shutil
 import time
 import numpy as np
 
@@ -227,6 +226,8 @@ def train_one_epoch(
     grad_acc_steps = params["gradient_accumulation_steps"]
     model = reranker.model
 
+    model.train()
+
     tr_loss = 0
     results = None
 
@@ -415,9 +416,6 @@ def main(params):
         len(cand_train_dataloader) * train_batch_size,
         logger
     )
-
-    ctxt_model.train()
-    cand_model.train()
 
     ctxt_best_epoch_idx = -1
     ctxt_best_score = -1

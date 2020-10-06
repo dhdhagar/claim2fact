@@ -248,8 +248,7 @@ def encode_context(
     label_ids = label_id_list.squeeze(1).numpy().tolist()
     label_uids = [cand_uid_map[k] for k in zip(srcs, label_ids)]
 
-    # structure dictionaries (zeshel only)
-    # FIXME: get this to work for non-zeshel
+    # structure dictionaries
     context_input_dict = defaultdict(list)
     context_encode_dict = defaultdict(list)
     context_label_uids = defaultdict(list)
@@ -275,14 +274,15 @@ def get_uid_map(
     start_offset=0,
     is_zeshel=False
 ):
-    if is_zeshel:
+    if isinstance(encoding, dict):
         uid = start_offset
         uid_map = {}
         for src, vecs in encoding.items():
             uid_map.update({(src, i) : uid+i for i in range(vecs.shape[0])})
             uid = len(uid_map.keys())
     else:
-        uid_map = {i : i+start_offset for i in range(len(encoding))}
+        assert not is_zeshel
+        uid_map = {(0, i) : i+start_offset for i in range(len(encoding))}
 
     return uid_map
 

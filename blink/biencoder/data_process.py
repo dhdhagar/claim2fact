@@ -153,9 +153,8 @@ def process_mention_data(
             src = sample["world"]
             src = world_to_id[src]
             record["src"] = [src]
-            use_world = True
         else:
-            use_world = False
+            record["src"] = [0]     # pseudo src
 
         processed_samples.append(record)
 
@@ -170,8 +169,6 @@ def process_mention_data(
             logger.info(
                 "Label ids : " + " ".join([str(v) for v in sample["label"]["ids"]])
             )
-            if use_world:
-                logger.info("Src : %d" % sample["src"][0])
             logger.info("Label_id : %d" % sample["label_idx"][0])
 
     context_vecs = torch.tensor(
@@ -180,10 +177,9 @@ def process_mention_data(
     cand_vecs = torch.tensor(
         select_field(processed_samples, "label", "ids"), dtype=torch.long,
     )
-    if use_world:
-        src_vecs = torch.tensor(
-            select_field(processed_samples, "src"), dtype=torch.long,
-        )
+    src_vecs = torch.tensor(
+        select_field(processed_samples, "src"), dtype=torch.long,
+    )
     label_idx = torch.tensor(
         select_field(processed_samples, "label_idx"), dtype=torch.long,
     )
@@ -193,9 +189,6 @@ def process_mention_data(
         "label_idx": label_idx,
     }
 
-    if use_world:
-        data["src"] = src_vecs
-        tensor_data = TensorDataset(context_vecs, cand_vecs, src_vecs, label_idx)
-    else:
-        tensor_data = TensorDataset(context_vecs, cand_vecs, label_idx)
+    data["src"] = src_vecs
+    tensor_data = TensorDataset(context_vecs, cand_vecs, src_vecs, label_idx)
     return data, tensor_data

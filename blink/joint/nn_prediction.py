@@ -56,6 +56,12 @@ def get_topk_predictions(
     save_predictions=False,
 ):
 
+    # handle no worlds case
+    if not isinstance(cand_encode_list, dict):
+        assert not isinstance(candidate_pool, dict)
+        cand_encode_list = [cand_encode_list]
+        candidate_pool = [candidate_pool]
+
     rev_cand_uid_map = {c : b for (_, b), c in cand_uid_map.items()}
     rev_ctxt_uid_map = {c : b for (_, b), c in ctxt_uid_map.items()}
 

@@ -156,9 +156,11 @@ def create_dataloader(
     if params["debug"]:
         max_n = 200
     example_bundle_size = params["example_bundle_size"]
-    context_input = None
     batch_size = params["eval_batch_size"] if evaluate \
                     else params["train_batch_size"]
+
+    context_input = None
+    context_input_chunks = []
 
     for i in trange(contexts.shape[0]):
         if len(pos_cands[i]) == 0:
@@ -179,35 +181,30 @@ def create_dataloader(
                 )
                 k += 1
 
-            if context_input is None:
-                context_input = modify(
+            context_input_chunks.append(
+                modify(
                     contexts[i].unsqueeze(0),
                     candidate_bundle.unsqueeze(0),
                     params["max_seq_length"]
                 )
-            else:
-                context_input = torch.cat(
-                    (context_input,
-                     modify(contexts[i].unsqueeze(0),
-                            candidate_bundle.unsqueeze(0),
-                            params["max_seq_length"]))
-                )
+            )
 
-        if max_n and context_input.shape[0] >= max_n:
-            context_input = context_input[:max_n]
-            break
+    # concatenate all of the chunks together
+    context_input = torch.cat(context_input_chunks) 
+    if max_n:
+        context_input = context_input[:max_n]
 
     # labels for each softmax bundle (positive always first)
     label_input = torch.zeros((context_input.shape[0],), dtype=torch.long)
 
-    train_tensor_data = TensorDataset(context_input, label_input)
-    train_sampler = RandomSampler(train_tensor_data)
-    train_dataloader = DataLoader(
-        train_tensor_data, 
-        sampler=train_sampler, 
+    tensor_data = TensorDataset(context_input, label_input)
+    sampler = RandomSampler(tensor_data)
+    dataloader = DataLoader(
+        tensor_data, 
+        sampler=sampler, 
         batch_size=batch_size
     )
-    return train_dataloader
+    return dataloader
 
 
 def train_one_epoch(
@@ -521,7 +518,6 @@ def main(params):
         best_cand_model_path,
         os.path.join(model_output_path, "best_epoch", "cand")
     )
-
 
 
 if __name__ == "__main__":

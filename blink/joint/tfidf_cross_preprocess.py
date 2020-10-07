@@ -201,9 +201,6 @@ def main(params):
     )
     torch.save(tfidf_data, save_data_path)
 
-    embed()
-    exit()
-
 
 if __name__ == "__main__":
     parser = BlinkParser(add_model_args=True)

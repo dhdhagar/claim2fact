@@ -250,7 +250,7 @@ class BlinkParser(argparse.ArgumentParser):
             "--mode",
             default="valid",
             type=str,
-            help="Train / validation / test",
+            help="train / valid / test",
         )
         parser.add_argument(
             "--save_topk_result",
@@ -281,3 +281,24 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="Path for candidate encoding",
         )
+
+    def add_joint_eval_args(self, args=None):
+        """
+        Add joint cross evaluation args.
+        """
+        parser = self.add_argument_group("Joint Model Evaluation Arguments")
+        parser.add_argument(
+            "--path_to_ctxt_model",
+            default=None,
+            type=str,
+            required=False,
+            help="The full path to the ctxt model to load.",
+        )
+        parser.add_argument(
+            "--path_to_cand_model",
+            default=None,
+            type=str,
+            required=False,
+            help="The full path to the ctxt model to load.",
+        )
+

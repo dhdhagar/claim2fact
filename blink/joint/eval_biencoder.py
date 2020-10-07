@@ -279,7 +279,7 @@ def get_uid_map(
         uid_map = {}
         for src, vecs in encoding.items():
             uid_map.update({(src, i) : uid+i for i in range(vecs.shape[0])})
-            uid = len(uid_map.keys())
+            uid = len(uid_map.keys()) + start_offset
     else:
         assert not is_zeshel
         uid_map = {(0, i) : i+start_offset for i in range(len(encoding))}

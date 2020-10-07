@@ -1,14 +1,23 @@
 import os
 import sys
+import json
 import random
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 from tqdm import tqdm, trange
+
+from scipy.sparse import coo_matrix
+from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 
 import blink.candidate_ranking.utils as utils
 from blink.common.params import BlinkParser
 from blink.crossencoder.crossencoder import CrossEncoderRanker
+from blink.joint.joint_eval.evaluation import (
+        compute_coref_metrics,
+        compute_linking_metrics,
+        compute_joint_metrics,
+        _get_global_maximum_spanning_tree
+)
 
 from IPython import embed
 
@@ -194,34 +203,85 @@ def main(params):
 
     # get all of the edges
     ctxt_edges, cand_edges = None, None
-    _cache_file = "dev_cache.t7"
-    if os.path.isfile(_cache_file):
-        ctxt_edges, cand_edges = torch.load(_cache_file)
-    else:
-        ctxt_edges = score_contexts(
-            ctxt_reranker,
-            ctxt_dataloader,
-            device=device,
-            logger=logger,
-            context_length=context_length,
-            suffix="ctxt",
-            silent=params["silent"],
-        )
-        cand_edges = score_contexts(
-            cand_reranker,
-            cand_dataloader,
-            device=device,
-            logger=logger,
-            context_length=context_length,
-            suffix="cand",
-            silent=params["silent"],
-        )
+    ctxt_edges = score_contexts(
+        ctxt_reranker,
+        ctxt_dataloader,
+        device=device,
+        logger=logger,
+        context_length=context_length,
+        suffix="ctxt",
+        silent=params["silent"],
+    )
+    cand_edges = score_contexts(
+        cand_reranker,
+        cand_dataloader,
+        device=device,
+        logger=logger,
+        context_length=context_length,
+        suffix="cand",
+        silent=params["silent"],
+    )
 
-    #TODO: save the graph for dev and later purposes
+    # construct the sparse graphs
+    sparse_shape = tuple(2*[max(gold_linking_map.keys())+1])
 
-    embed()
-    exit()
+    _ctxt_data = ctxt_edges[:, 2].cpu().numpy()
+    _ctxt_row = ctxt_edges[:, 0].cpu().numpy()
+    _ctxt_col = ctxt_edges[:, 1].cpu().numpy()
+    ctxt_graph = coo_matrix(
+        (_ctxt_data, (_ctxt_row, _ctxt_col)), shape=sparse_shape
+    )
 
+    _cand_data = cand_edges[:, 2].cpu().numpy()
+    _cand_row = cand_edges[:, 1].cpu().numpy()
+    _cand_col = cand_edges[:, 0].cpu().numpy()
+    cand_graph = coo_matrix(
+        (_cand_data, (_cand_row, _cand_col)), shape=sparse_shape
+    )
+
+    logger.info('Computing coref metrics...')
+    coref_metrics = compute_coref_metrics(
+        gold_coref_clusters, ctxt_graph
+    )
+    logger.info('Done.')
+
+    logger.info('Computing linking metrics...')
+    linking_metrics, slim_linking_graph = compute_linking_metrics(
+        cand_graph, gold_linking_map
+    )
+    logger.info('Done.')
+
+    logger.info('Computing joint metrics...')
+    slim_coref_graph = _get_global_maximum_spanning_tree([ctxt_graph])
+    joint_metrics = compute_joint_metrics(
+        [slim_coref_graph, slim_linking_graph],
+        gold_linking_map,
+        min(gold_linking_map.keys())
+    )
+    logger.info('Done.')
+
+    metrics = {
+        'coref_fmi' : coref_metrics['fmi'],
+        'coref_rand_index' : coref_metrics['rand_index'],
+        'coref_threshold' : coref_metrics['threshold'],
+        'vanilla_recall' : linking_metrics['vanilla_recall'],
+        'vanilla_accuracy' : linking_metrics['vanilla_accuracy'],
+        'joint_accuracy' : joint_metrics['joint_accuracy'],
+        'joint_cc_recall' : joint_metrics['joint_cc_recall']
+    }
+
+    logger.info('joint_metrics: {}'.format(
+        json.dumps(metrics, sort_keys=True, indent=4)
+    ))
+
+    # save all of the predictions for later analysis
+    save_data = {}
+    save_data.update(coref_metrics)
+    save_data.update(linking_metrics)
+    save_data.update(joint_metrics)
+
+    save_fname = os.path.join(eval_output_path, 'results.t7')
+    torch.save(save_data, save_fname)
 
 
 if __name__ == "__main__":

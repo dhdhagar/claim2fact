@@ -163,7 +163,7 @@ def create_dataloader(
     context_input_chunks = []
 
     for i in trange(contexts.shape[0]):
-        if len(pos_cands[i]) == 0:
+        if len(pos_cands[i]) == 0 or knn_cand_uids[i].shape[0] == 0:
             continue
         ex_pos_cands = pos_cands[i]
         if len(ex_pos_cands.shape) == 1:
@@ -172,7 +172,7 @@ def create_dataloader(
             candidate_bundle = ex_pos_cands[j].unsqueeze(0)
             k = 0
             while candidate_bundle.shape[0] < example_bundle_size:
-                k %= knn_cand_uids.shape[1]
+                k %= knn_cand_uids[i].shape[0]
                 if knn_cand_uids[i][k].item() in pos_cand_uids[i]:
                     k += 1
                     continue

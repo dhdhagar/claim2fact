@@ -64,6 +64,10 @@ with open(os.path.join(DATA_DIR, DATASET, 'mentions', split + '.json'), 'r') as 
         transformed_mention['label_id'] = entity2idx[one_mention['label_document_id']]
         transformed_mention['label'] = label_doc['text']
         transformed_mention['label_title'] = label_doc['title']
+        transformed_mention['context_doc_id'] = one_mention['context_document_id']
+        transformed_mention['type'] = one_mention['category']
+        transformed_mention['label_umls_cuid'] = one_mention['label_document_id']
+        transformed_mention['mm_mention_id'] = one_mention['mention_id']
 
         blink_mentions.append(transformed_mention)
 

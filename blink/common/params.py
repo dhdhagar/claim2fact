@@ -282,6 +282,34 @@ class BlinkParser(argparse.ArgumentParser):
             help="Path for candidate encoding",
         )
 
+    def add_joint_train_args(self, args=None):
+        """
+        Add joint cross train args.
+        """
+        parser = self.add_argument_group("Joint Model Training Arguments")
+        parser.add_argument(
+            "--add_sigmoid",
+            action="store_true",
+            help="Whether to output sigmoid projection of score.",
+        )
+        parser.add_argument(
+            "--objective",
+            default="max_margin",
+            type=str,
+            help="max_margin / softmax",
+        )
+        parser.add_argument(
+            "--margin", 
+            default=0.7, 
+            type=float, 
+            help="margin for triplet max-margin objective"
+        )
+        parser.add_argument(
+            "--pool_highlighted",
+            action="store_true",
+            help="Whether to score ctxt pairs using highlighted output layers.",
+        )
+
     def add_joint_eval_args(self, args=None):
         """
         Add joint cross evaluation args.

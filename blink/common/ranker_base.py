@@ -15,9 +15,16 @@ def get_model_obj(model):
 
 class BertEncoder(nn.Module):
     def __init__(
-        self, bert_model, output_dim, layer_pulled=-1, add_linear=None):
+        self,
+        bert_model,
+        output_dim,
+        layer_pulled=-1,
+        add_linear=None,
+        get_all_outputs=False
+    ):
         super(BertEncoder, self).__init__()
         self.layer_pulled = layer_pulled
+        self.get_all_outputs = get_all_outputs
         bert_output_dim = bert_model.embeddings.word_embeddings.weight.size(1)
 
         self.bert_model = bert_model
@@ -31,17 +38,21 @@ class BertEncoder(nn.Module):
         output_bert, output_pooler = self.bert_model(
             token_ids, segment_ids, attention_mask
         )
-        # get embedding of [CLS] token
-        if self.additional_linear is not None:
-            embeddings = output_pooler
-        else:
-            embeddings = output_bert[:, 0, :]
 
-        # in case of dimensionality reduction
-        if self.additional_linear is not None:
-            result = self.additional_linear(self.dropout(embeddings))
+        if self.get_all_outputs:
+            result = output_bert
         else:
-            result = embeddings
+            # get embedding of [CLS] token
+            if self.additional_linear is not None:
+                embeddings = output_pooler
+            else:
+                embeddings = output_bert[:, 0, :]
+
+            # in case of dimensionality reduction
+            if self.additional_linear is not None:
+                result = self.additional_linear(self.dropout(embeddings))
+            else:
+                result = embeddings
 
         return result
 

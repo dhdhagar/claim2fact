@@ -13,9 +13,9 @@ import sys
 import datetime
 
 
-ENT_START_TAG = "[unused0]"
-ENT_END_TAG = "[unused1]"
-ENT_TITLE_TAG = "[unused2]"
+ENT_START_TAG = "[unused1]"
+ENT_END_TAG = "[unused2]"
+ENT_TITLE_TAG = "[unused3]"
 
 
 class BlinkParser(argparse.ArgumentParser):

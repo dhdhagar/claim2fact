@@ -92,7 +92,7 @@ class CrossEncoderModule(torch.nn.Module):
                 end_indices_a = end_indices[::2,:]
                 start_indices_b = start_indices[1::2,:]
                 end_indices_b = end_indices[1::2,:]
-                
+
                 mask_a = (index_tensor > start_indices_a) & (index_tensor < end_indices_a)
                 mask_b = (index_tensor > start_indices_b) & (index_tensor < end_indices_b)
                 mask_a = mask_a.unsqueeze(-1).type(torch.float)

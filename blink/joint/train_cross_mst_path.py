@@ -163,6 +163,10 @@ def create_mst_dataloader(
     params,
     gold_coref_clusters,
     contexts,
+    pos_ctxts,
+    pos_ctxt_uids,
+    knn_ctxts,
+    knn_ctxt_uids,
     pos_cands,
     pos_cand_uids,
     knn_cands,
@@ -181,19 +185,44 @@ def create_mst_dataloader(
 
     context_input = None
     context_input_clusters = []
+    candidate_input_clusters = []
 
     if max_n:
         gold_coref_clusters = gold_coref_clusters[:max_n]
 
     for c in tqdm(gold_coref_clusters):
-        if len(c) < 2:
-            continue
-        cluster_input_chunks = []
+        context_input_chunks = []
+        candidate_input_chunks = []
         for i in c:   # for all idxs in the cluster
-            if len(pos_cands[i]) == 0 or knn_cand_uids[i].shape[0] == 0:
-                continue
+            if len(c) >= 2:
+                if len(pos_ctxts[i]) == 0 or knn_ctxt_uids[i].shape[0] == 0:
+                    continue
+                ex_pos_ctxts = pos_ctxts[i]
+                assert sorted(pos_ctxt_uids[i].tolist()) == pos_ctxt_uids[i].tolist()
+                if len(ex_pos_ctxts.shape) == 1:
+                    ex_pos_ctxts = ex_pos_ctxts.unsqueeze(0)
+                for j in range(ex_pos_ctxts.shape[0]):
+                    context_bundle = ex_pos_ctxts[j].unsqueeze(0)
+                    k = 0
+                    while context_bundle.shape[0] < example_bundle_size:
+                        k %= knn_ctxt_uids[i].shape[0]
+                        if knn_ctxt_uids[i][k].item() in pos_ctxt_uids[i]:
+                            k += 1
+                            continue
+                        context_bundle = torch.cat(
+                            (context_bundle, knn_ctxts[i][k].unsqueeze(0))
+                        )
+                        k += 1
+
+                    context_input_chunks.append(
+                        modify(
+                            contexts[i].unsqueeze(0),
+                            context_bundle.unsqueeze(0),
+                            params["max_seq_length"]
+                        )
+                    )
+
             ex_pos_cands = pos_cands[i]
-            assert sorted(pos_cand_uids[i].tolist()) == pos_cand_uids[i].tolist()
             if len(ex_pos_cands.shape) == 1:
                 ex_pos_cands = ex_pos_cands.unsqueeze(0)
             for j in range(ex_pos_cands.shape[0]):
@@ -209,7 +238,7 @@ def create_mst_dataloader(
                     )
                     k += 1
 
-                cluster_input_chunks.append(
+                candidate_input_chunks.append(
                     modify(
                         contexts[i].unsqueeze(0),
                         candidate_bundle.unsqueeze(0),
@@ -217,14 +246,20 @@ def create_mst_dataloader(
                     )
                 )
 
-        context_input_clusters.append(torch.cat(cluster_input_chunks))
+        if len(context_input_chunks) > 0:
+            context_input_clusters.append(torch.cat(context_input_chunks))
+        else:
+            context_input_clusters.append(torch.tensor([]))
+        candidate_input_clusters.append(torch.cat(candidate_input_chunks))
 
     if max_n:
         context_input_clusters = context_input_clusters[:max_n]
+        candidate_input_clusters = candidate_input_clusters[:max_n]
 
-    sampler = RandomSampler(context_input_clusters)
+    list_data = list(zip(context_input_clusters, candidate_input_clusters))
+    sampler = RandomSampler(list_data)
     mst_dataloader = DataLoader(
-        context_input_clusters, 
+        list_data, 
         sampler=sampler, 
         batch_size=1
     )
@@ -298,173 +333,213 @@ def create_dataloader(
     return dataloader
 
 
-def train_one_epoch_mst(
+def train_one_epoch_mst_path(
     train_dataloader,
-    reranker,
-    optimizer,
-    scheduler,
+    ctxt_reranker,
+    ctxt_optimizer,
+    ctxt_scheduler,
+    cand_reranker,
+    cand_optimizer,
+    cand_scheduler,
     logger,
     params,
     epoch_idx,
     device=None,
-    suffix=None,
 ):
 
-    assert suffix is not None
     context_length = params["max_context_length"]
     grad_acc_steps = params["gradient_accumulation_steps"]
-    model = reranker.model
+    example_bundle_size = params["example_bundle_size"]
+    ctxt_model = ctxt_reranker.model
+    cand_model = cand_reranker.model
 
-    model.train()
+    ctxt_model.train()
+    cand_model.train()
 
-    tr_loss = 0
+    ctxt_loss = 0
+    cand_loss = 0
     results = None
 
     if params["silent"]:
         iter_ = train_dataloader
     else:
-        iter_ = tqdm(train_dataloader, desc="Batch ({})".format(suffix))
+        iter_ = tqdm(train_dataloader, desc="Batch")
 
     for step, batch in enumerate(iter_):
-        cluster_context_input = batch[0].squeeze(0)
-        # quadratic formula to get cluster size from num edges
-        cluster_size = int((1 + math.sqrt(1 + 4*cluster_context_input.shape[0]))/2)
+        context_input = batch[0]
+        if torch.numel(context_input) > 0:
+            context_input.squeeze_(0)
+        candidate_input = batch[1].squeeze(0)
+        cluster_size = candidate_input.shape[0]
+        if cluster_size > 1:
+            # quadratic formula to get cluster size from num edges
+            assert cluster_size == int((1 + math.sqrt(1 + 4*context_input.shape[0]))/2)
 
-        context_input = None
         with torch.no_grad():
             # get scores
-            scores = []
-            sampler = SequentialSampler(cluster_context_input)
-            scores_dataloader = DataLoader(
-                cluster_context_input, 
+            context_scores = []
+            if torch.numel(context_input) > 0:
+                sampler = SequentialSampler(context_input)
+                context_dataloader = DataLoader(
+                    context_input, 
+                    sampler=sampler, 
+                    batch_size=params["eval_batch_size"]
+                )
+                for sub_context_input in context_dataloader:
+                    sub_context_input = sub_context_input.to(device)
+                    context_scores.append(
+                        ctxt_reranker.score_candidate(
+                            sub_context_input,
+                            context_length
+                        )
+                    )
+                context_scores = torch.cat(context_scores)
+                context_scores = context_scores.cpu()
+                context_input = context_input.cpu()
+
+            candidate_scores = []
+            sampler = SequentialSampler(candidate_input)
+            candidate_dataloader = DataLoader(
+                candidate_input, 
                 sampler=sampler, 
                 batch_size=params["eval_batch_size"]
             )
-            for sub_context_input in scores_dataloader:
-                sub_context_input = sub_context_input.to(device)
-                scores.append(
-                    reranker.score_candidate(
-                        sub_context_input,
+            for sub_candidate_input in candidate_dataloader:
+                sub_candidate_input = sub_candidate_input.to(device)
+                candidate_scores.append(
+                    cand_reranker.score_candidate(
+                        sub_candidate_input,
                         context_length
                     )
                 )
-
-            scores = torch.cat(scores)
-
-            scores = scores.cpu()
-            cluster_context_input = cluster_context_input.cpu()
+            candidate_scores = torch.cat(candidate_scores)
+            candidate_scores = candidate_scores.cpu()
+            candidate_input = candidate_input.cpu()
 
             # compute mst
-            pos_scores = scores[:, 0].tolist()
+            if len(context_scores) > 0:
+                pos_ctxt_scores = context_scores[:, 0].tolist()
+            pos_cand_scores = candidate_scores[:, 0].tolist()
             k = 0
-            affinity_matrix = np.zeros((cluster_size, cluster_size))
+            affinity_matrix = np.zeros((cluster_size+1, cluster_size+1))
             reverse_idx_map = {}
             for i in range(cluster_size):
                 for j in range(cluster_size):
                     if i != j:
                         reverse_idx_map[(i, j)] = k
                         # negative because mst
-                        affinity_matrix[i, j] = -pos_scores[k]
+                        affinity_matrix[i, j] = -pos_ctxt_scores[k]
                         k += 1
+                # get the candidate scores
+                affinity_matrix[i, cluster_size] = -pos_cand_scores[i]
             mst = minimum_spanning_tree(csr_matrix(affinity_matrix)).tocoo()
 
             # compute training edges
-            train_idxs = [reverse_idx_map[t] for t in zip(mst.row, mst.col)]
-            hard_neg_idxs = torch.argmax(scores[:,1:][train_idxs], 1) + 1
-            hard_neg_idxs = hard_neg_idxs.tolist()
-            context_bundles = []
-            for i, neg in zip(train_idxs, hard_neg_idxs):
-                bundle = [cluster_context_input[i,0,:].unsqueeze(0)]
-                bundle.append(cluster_context_input[i,neg,:].unsqueeze(0))
-                bundle = torch.cat(bundle)
-                context_bundles.append(bundle.unsqueeze(0))
-            context_input = torch.cat(context_bundles)
+            train_ctxt_idxs, train_cand_idxs = [], []
+            for r, c in zip(mst.row, mst.col):
+                if c == cluster_size:
+                    train_cand_idxs.append(r)
+                else:
+                    train_ctxt_idxs.append(reverse_idx_map[(r, c)])
 
-        label_input = torch.zeros((context_input.shape[0],), dtype=torch.long)
-        tensor_data = TensorDataset(context_input, label_input)
+            train_candidate_input = torch.cat(
+                [candidate_input[i].unsqueeze(0) for i in train_cand_idxs]
+            )
+
+            train_context_input = None
+            if len(train_ctxt_idxs) > 0:
+                neg_ctxt_scores = context_scores[:,1:].reshape(
+                    cluster_size, (cluster_size-1)*(example_bundle_size-1)
+                )
+                _, hard_neg_idxs = torch.topk(
+                    neg_ctxt_scores, example_bundle_size-1, 1
+                )
+                hard_neg_idxs += (hard_neg_idxs // (example_bundle_size-1))
+                context_input = context_input.reshape(
+                    cluster_size, (cluster_size-1) * example_bundle_size, -1
+                )
+                context_bundles = []
+                for i in train_ctxt_idxs:
+                    r, c = i // (cluster_size-1), i % (cluster_size-1)
+                    bundle = [context_input[r,c*example_bundle_size,:].unsqueeze(0)]
+                    bundle.append(context_input[r,hard_neg_idxs[r],:])
+                    bundle = torch.cat(bundle)
+                    context_bundles.append(bundle.unsqueeze(0))
+                train_context_input = torch.cat(context_bundles)
+
+        if train_context_input is not None:
+            label_input = torch.zeros((train_context_input.shape[0],), dtype=torch.long)
+            tensor_data = TensorDataset(train_context_input, label_input)
+            sampler = RandomSampler(tensor_data)
+            sub_dataloader = DataLoader(
+                tensor_data, 
+                sampler=sampler, 
+                batch_size=params["train_batch_size"] * example_bundle_size // 2
+            )
+
+            iter_ = sub_dataloader
+            for _, batch in enumerate(iter_):
+                batch = tuple(t.to(device) for t in batch)
+                context_input, label_input = batch
+                loss, _ = ctxt_reranker(
+                    context_input, label_input, context_length
+                )
+                loss.backward()
+                ctxt_loss += loss.item() / len(iter_)
+                torch.nn.utils.clip_grad_norm_(
+                    ctxt_model.parameters(), params["max_grad_norm"]
+                )
+                ctxt_optimizer.step()
+                ctxt_scheduler.step()
+                ctxt_optimizer.zero_grad()
+
+
+        label_input = torch.zeros(
+            (train_candidate_input.shape[0],), dtype=torch.long
+        )
+        tensor_data = TensorDataset(train_candidate_input, label_input)
         sampler = RandomSampler(tensor_data)
         sub_dataloader = DataLoader(
             tensor_data, 
             sampler=sampler, 
-            batch_size=params["train_batch_size"] * params["example_bundle_size"] // 2
+            batch_size=params["train_batch_size"] * example_bundle_size // 2
         )
 
         iter_ = sub_dataloader
         for _, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
             context_input, label_input = batch
-            loss, _ = reranker(context_input, label_input, context_length)
-            loss.backward()
-            tr_loss += loss.item()
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(), params["max_grad_norm"]
+            loss, _ = cand_reranker(
+                context_input, label_input, context_length
             )
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
-
-
-def train_one_epoch(
-    train_dataloader,
-    reranker,
-    optimizer,
-    scheduler,
-    logger,
-    params,
-    epoch_idx,
-    device=None,
-    suffix=None,
-):
-
-    assert suffix is not None
-    context_length = params["max_context_length"]
-    grad_acc_steps = params["gradient_accumulation_steps"]
-    model = reranker.model
-
-    model.train()
-
-    tr_loss = 0
-    results = None
-
-    if params["silent"]:
-        iter_ = train_dataloader
-    else:
-        iter_ = tqdm(train_dataloader, desc="Batch ({})".format(suffix))
-
-    part = 0
-    for step, batch in enumerate(iter_):
-        batch = tuple(t.to(device) for t in batch)
-        context_input, label_input = batch
-        loss, _ = reranker(context_input, label_input, context_length)
-
-        # if n_gpu > 1:
-        #     loss = loss.mean() # mean() to average on multi-gpu.
-
-        if grad_acc_steps > 1:
-            loss = loss / grad_acc_steps
-
-        tr_loss += loss.item()
+            loss.backward()
+            cand_loss += loss.item() / len(iter_)
+            torch.nn.utils.clip_grad_norm_(
+                cand_model.parameters(), params["max_grad_norm"]
+            )
+            cand_optimizer.step()
+            cand_scheduler.step()
+            cand_optimizer.zero_grad()
 
         if (step + 1) % (params["print_interval"] * grad_acc_steps) == 0:
             logger.info(
                 "({}) Step {} - epoch {} average loss: {}\n".format(
-                    suffix,
+                    "ctxt",
                     step,
                     epoch_idx,
-                    tr_loss / (params["print_interval"] * grad_acc_steps),
+                    ctxt_loss / (params["print_interval"] * grad_acc_steps),
                 )
             )
-            tr_loss = 0
-
-        loss.backward()
-
-        if (step + 1) % grad_acc_steps == 0:
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(), params["max_grad_norm"]
+            ctxt_loss = 0
+            logger.info(
+                "({}) Step {} - epoch {} average loss: {}\n".format(
+                    "cand",
+                    step,
+                    epoch_idx,
+                    cand_loss / (params["print_interval"] * grad_acc_steps),
+                )
             )
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
+            cand_loss = 0
 
 
 def main(params):
@@ -528,25 +603,20 @@ def main(params):
     fname = os.path.join(params["data_path"], "joint_train.t7")
     train_data = torch.load(fname)
     gold_coref_clusters = build_gold_coref_clusters(train_data)
-    ctxt_train_dataloader = create_mst_dataloader(
+    train_dataloader = create_mst_dataloader(
         params,
         gold_coref_clusters,
         train_data["contexts"],
         train_data["pos_coref_ctxts"],
         train_data["pos_coref_ctxt_uids"],
         train_data["knn_ctxts"],
-        train_data["knn_ctxt_uids"]
-    )
-
-    cand_train_dataloader = create_dataloader(
-        params,
-        train_data["contexts"],
+        train_data["knn_ctxt_uids"],
         train_data["pos_cands"],
         train_data["pos_cand_uids"],
         train_data["knn_cands"],
         train_data["knn_cand_uids"]
     )
-    
+
     fname = os.path.join(params["data_path"], "joint_valid.t7")
     valid_data = torch.load(fname)
     ctxt_valid_dataloader = create_dataloader(
@@ -605,7 +675,7 @@ def main(params):
     ctxt_scheduler = get_scheduler(
         params,
         ctxt_optimizer,
-        len(ctxt_train_dataloader) * train_batch_size,
+        len(train_dataloader) * train_batch_size,
         logger
     )
 
@@ -613,7 +683,7 @@ def main(params):
     cand_scheduler = get_scheduler(
         params,
         cand_optimizer,
-        len(cand_train_dataloader) * train_batch_size,
+        len(train_dataloader) * train_batch_size,
         logger
     )
 
@@ -625,22 +695,12 @@ def main(params):
     num_train_epochs = params["num_train_epochs"]
 
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
-        # train ctxt model
-        train_one_epoch_mst(
-            ctxt_train_dataloader,
+        # train both models
+        train_one_epoch_mst_path(
+            train_dataloader,
             ctxt_reranker,
             ctxt_optimizer,
             ctxt_scheduler,
-            logger,
-            params,
-            epoch_idx,
-            device=device,
-            suffix='ctxt'
-        )
-
-        # train cand model
-        train_one_epoch(
-            cand_train_dataloader,
             cand_reranker,
             cand_optimizer,
             cand_scheduler,
@@ -648,7 +708,6 @@ def main(params):
             params,
             epoch_idx,
             device=device,
-            suffix='cand'
         )
 
         logger.info("***** Saving fine - tuned models *****")

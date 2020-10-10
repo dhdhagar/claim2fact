@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 
 import blink.candidate_ranking.utils as utils
 from blink.common.params import BlinkParser
-from blink.crossencoder.crossencoder import CrossEncoderRanker
+from blink.joint.crossencoder import CrossEncoderRanker
 from blink.joint.joint_eval.evaluation import (
         compute_coref_metrics,
         compute_linking_metrics,
@@ -158,6 +158,7 @@ def main(params):
     ctxt_reranker = CrossEncoderRanker(params)
     ctxt_model = ctxt_reranker.model
 
+    params["pool_highlighted"] = False
     params["path_to_model"] = params["path_to_cand_model"]
     cand_reranker = CrossEncoderRanker(params)
     cand_model = cand_reranker.model
@@ -287,6 +288,7 @@ def main(params):
 if __name__ == "__main__":
     parser = BlinkParser(add_model_args=True)
     parser.add_eval_args()
+    parser.add_joint_train_args()
     parser.add_joint_eval_args()
 
     # args = argparse.Namespace(**params)

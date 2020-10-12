@@ -39,10 +39,10 @@ for doc_fname in tqdm(os.listdir(doc_dir), desc='Loading docuemnts'):
             entity2idx[doc_id] = idx
 
 
-# get all of the train mentions
+# get all of the test mentions
 print('Processing mentions...')
 blink_mentions = []
-split = 'train'
+split = 'test'
 with open(os.path.join(DATA_DIR, DATASET, 'mentions', split + '.json'), 'r') as f:
     for line in f:
         one_mention = json.loads(line.strip())
@@ -74,9 +74,9 @@ with open(os.path.join(DATA_DIR, DATASET, 'mentions', split + '.json'), 'r') as 
 print('Done.')
 
 
-# write all of the transformed train mentions
+# write all of the transformed test mentions
 print('Writing processed mentions to file...')
-split = 'train'
+split = 'test'
 with open(os.path.join(OUTPUT_DIR, split + '.jsonl'), 'w') as f:
     f.write('\n'.join([json.dumps(m) for m in blink_mentions]))
 print('Done.')

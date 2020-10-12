@@ -126,6 +126,15 @@ def main(params):
     for c, d in ctxt_doc_map.items():
         doc_ctxt_map[d].append(c)
 
+    # create text maps for investigative evaluation
+    uid_to_json = {
+        uid : {'cuid': cuid, 
+               'title': entity_dict[cuid][0],
+               'text': entity_dict[cuid][1]}
+            for cuid, uid in cand_uid_map.items()
+    }
+    uid_to_json.update({i+num_cands : x for i, x in enumerate(test_samples)})
+
     # tokenize the contexts
     test_data, test_tensor_data = data.process_mention_data(
         test_samples,
@@ -193,6 +202,7 @@ def main(params):
         "pos_cand_uids":  pos_cand_uids,
         "knn_cands":  knn_cands,
         "knn_cand_uids":  knn_cand_uids,
+        "uid_to_json":  uid_to_json,
     }
     
     save_data_path = os.path.join(

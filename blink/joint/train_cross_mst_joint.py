@@ -538,7 +538,15 @@ def main(params):
     # create output dir
     now = datetime.now()
     datetime_str = now.strftime("%Y-%m-%d_%H-%M-%S")
-    model_output_path = os.path.join(params["output_path"], datetime_str)
+    program_name = os.path.splitext(os.path.basename(__file__))[0]
+    if params.get("debug", False):
+        model_output_path = os.path.join(
+            params["output_path"], program_name, "debug"
+        )
+    else:
+        model_output_path = os.path.join(
+            params["output_path"], program_name, datetime_str
+        )
     if not os.path.exists(model_output_path):
         os.makedirs(model_output_path)
 

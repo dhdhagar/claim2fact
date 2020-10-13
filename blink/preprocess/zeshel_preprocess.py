@@ -44,7 +44,7 @@ for doc_fname in tqdm(os.listdir(doc_dir), desc='Loading docuemnts'):
 # get all of the train mentions
 print('Processing mentions...')
 blink_mentions = []
-split = 'train'
+split = 'test'
 with open(os.path.join(DATA_DIR, DATASET, 'mentions', split + '.json'), 'r') as f:
     for line in f:
         one_mention = json.loads(line.strip())
@@ -76,7 +76,7 @@ print('Done.')
 
 # write all of the transformed train mentions
 print('Writing processed mentions to file...')
-split = 'train'
+split = 'test'
 with open(os.path.join(OUTPUT_DIR, split + '.jsonl'), 'w') as f:
     f.write('\n'.join([json.dumps(m) for m in blink_mentions]))
 print('Done.')

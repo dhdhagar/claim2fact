@@ -228,9 +228,7 @@ def main(params):
 
     # save all of the predictions for later analysis
     save_data = {}
-    save_data.update(coref_metrics)
     save_data.update(linking_metrics)
-    save_data.update(joint_metrics)
 
     save_fname = os.path.join(eval_output_path, 'results.t7')
     torch.save(save_data, save_fname)

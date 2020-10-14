@@ -217,9 +217,30 @@ def main(params):
     )
     logger.info('Done.')
 
+    _cand_row = cand_graph.row
+    _cand_col = cand_graph.col
+    _cand_data = cand_graph.data
+    _gt_row, _gt_col, _gt_data = [], [], []
+    for r, c, d in zip(_cand_row, _cand_col, _cand_data):
+        if uid_to_json[r]['type'] == uid_to_json[c]['type']:
+            _gt_row.append(r)
+            _gt_col.append(c)
+            _gt_data.append(d)
+
+    gold_type_cand_graph = coo_matrix(
+        (_gt_data, (_gt_row, _gt_col)), shape=sparse_shape
+    )
+
+    logger.info('Computing gold-type linking metrics...')
+    gold_type_linking_metrics, slim_linking_graph = compute_linking_metrics(
+        gold_type_cand_graph, gold_linking_map
+    )
+    logger.info('Done.')
+
     metrics = {
         'vanilla_recall' : linking_metrics['vanilla_recall'],
         'vanilla_accuracy' : linking_metrics['vanilla_accuracy'],
+        'gold_type_vanilla_accuracy' : gold_type_linking_metrics['vanilla_accuracy'],
     }
 
     logger.info('joint_metrics: {}'.format(
@@ -229,6 +250,10 @@ def main(params):
     # save all of the predictions for later analysis
     save_data = {}
     save_data.update(linking_metrics)
+    gold_type_linking_metrics = {
+        'gold_type_'+k : v for k, v in gold_type_linking_metrics.items()
+    }
+    save_data.update(gold_type_linking_metrics)
 
     save_fname = os.path.join(eval_output_path, 'results.t7')
     torch.save(save_data, save_fname)

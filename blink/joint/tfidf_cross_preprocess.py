@@ -25,6 +25,7 @@ def load_entity_dict(logger, params):
     assert path is not None, "Error! entity_dict_path is empty."
 
     entity_dict = {}
+    entity_json = {}
     logger.info("Loading entity description from path: " + path)
     with open(path, 'rt') as f:
         for line in f:
@@ -33,10 +34,11 @@ def load_entity_dict(logger, params):
             title = sample['title']
             text = sample.get("text", "").strip()
             entity_dict[entity_id] = (title, text)
+            entity_json[entity_id] = sample
             if params["debug"] and len(entity_list) > 200:
                 break
 
-    return entity_dict
+    return entity_dict, entity_json
 
 
 def read_tfidf_cands(data_path, mode):
@@ -91,7 +93,7 @@ def main(params):
     tokenizer = reranker.tokenizer
 
     # laod entities
-    entity_dict = load_entity_dict(logger, params)
+    entity_dict, entity_json = load_entity_dict(logger, params)
 
     # load tfidf candidates
     tfidf_cand_dict = read_tfidf_cands(params["data_path"], params["mode"])
@@ -128,10 +130,7 @@ def main(params):
 
     # create text maps for investigative evaluation
     uid_to_json = {
-        uid : {'cuid': cuid, 
-               'title': entity_dict[cuid][0],
-               'text': entity_dict[cuid][1]}
-            for cuid, uid in cand_uid_map.items()
+        uid : entity_json[cuid] for cuid, uid in cand_uid_map.items()
     }
     uid_to_json.update({i+num_cands : x for i, x in enumerate(test_samples)})
 

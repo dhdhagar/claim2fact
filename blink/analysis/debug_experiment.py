@@ -10,13 +10,8 @@ import torch
 from IPython import embed
 
 
-EXTERNAL_BASE_DIR=('/mnt/nfs/scratch1/rangell/lerac/coref_entity_linking/'
-                   'experiments/mm_st21pv_long_entities/cluster_linking')
-EXP_ID='exp_test'
-CKPT_ID='checkpoint-3721' 
-
-# TODO:
-# - 
+EVAL_OUTPUT_FILE = '/mnt/nfs/scratch1/rangell/BLINK/exp/zeshel/joint_crossencoder/2020-10-11_11-03-30/epoch_1/eval_output/valid_results.t7'
+SPLIT_DATA_FILE = '/mnt/nfs/scratch1/rangell/BLINK/data/zeshel/joint_valid.t7'
 
 def load_pickle_file(fname):
     with open(fname, 'rb') as f:
@@ -180,76 +175,15 @@ def list_diff(list_a, list_b):
 
 if __name__ == '__main__':
 
-    print('Debugging experiment: {}, checkpoint: {}'.format(EXP_ID, CKPT_ID))
-
+    print('Debugging experiment: {}'.format(EVAL_OUTPUT_FILE))
+    
     print('Loading data...')
-    metadata, knn_index_tuple, embed_results_data, concat_results_data = load_data_files()
+    results_data = torch.load(EVAL_OUTPUT_FILE)
+    split_data = torch.load(SPLIT_DATA_FILE)
     print('Done.')
 
-
-    results = SimpleNamespace()
-
-    #knn_idxs, knn_X = knn_index_tuple
-
-    #print('kNN index check...')
-    #knn_index_check(metadata, knn_idxs, knn_X, results)
-    #print('Done.')
-    knn_idxs, knn_X = None, None
-
-    # compute list of lists of midxs for gold clusters analysis
-    wdoc_clusters =  [
-            [x for x in cluster if x >= metadata.num_entities] 
-                for doc in metadata.wdoc_clusters.values()
-                    for cluster in doc.values()
-    ]
-
-    embed()
-    exit()
-
-
-    print('Computing accuracies...')
-    #results.embed_vanilla_accuracy, eva_correct_midxs = compute_accuracy(
-    #        embed_results_data, metadata, pred_key='vanilla_pred_midx2eidx'
-    #)
-    results.concat_vanilla_accuracy, cva_correct_midxs = compute_accuracy(
-            concat_results_data, metadata, pred_key='vanilla_pred_midx2eidx'
-    )
-
-    #results.embed_joint_accuracy, eja_correct_midxs = compute_accuracy(
-    #        embed_results_data, metadata, pred_key='joint_pred_midx2eidx'
-    #)
-    results.concat_joint_accuracy, cja_correct_midxs = compute_accuracy(
-            concat_results_data, metadata, pred_key='joint_pred_midx2eidx'
-    )
-
-    #results.embed_gold_clusters_recall, egcr_correct_midxs = compute_gold_clusters_recall(
-    #        embed_results_data, metadata, wdoc_clusters
-    #)
-    results.concat_gold_clusters_recall, cgcr_correct_midxs = compute_gold_clusters_recall(
-            concat_results_data, metadata, wdoc_clusters
-    )
-
-
-    #results.embed_gold_clusters_accuracy, egca_correct_midxs = compute_gold_clusters_accuracy(
-    #        embed_results_data, metadata, knn_idxs, knn_X, wdoc_clusters
-    #)
-    results.concat_gold_clusters_accuracy, cgca_correct_midxs = compute_gold_clusters_accuracy(
-            concat_results_data, metadata, knn_idxs, knn_X, wdoc_clusters
-    )
-
-    #results.embed_gold_clusters_accuracy_w_gt_entity, egca2_correct_midxs = compute_gold_clusters_accuracy(
-    #        embed_results_data, metadata, knn_idxs, knn_X, wdoc_clusters, include_gold_eidxs=True
-    #)
-
-    print('Done.')
-
-
-    print()
-    rows = []
-    for field in filter(lambda s : '__' not in s, dir(results)):
-        rows.append([field, getattr(results, field)])
-    print(tabulate(rows, headers=['Metric', 'Value']), '\n')
-
+    _iter = zip(split_data['context_uids'], split_data['pos_cand_uids']) 
+    gold_midx2eidx = {a.item() : b.item() for a, b in _iter}
 
     embed()
     exit()

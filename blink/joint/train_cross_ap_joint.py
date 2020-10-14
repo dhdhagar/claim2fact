@@ -456,15 +456,10 @@ def train_one_epoch_mst_joint(
                         pos_tuples[0], pos_tuples[1], np.where(pos_mask)[0]
                     )
             }
-            affinity_matrix = csr_matrix(
-                (-scores[pos_mask].cpu().numpy(), pos_tuples),
-                shape=tuple([cluster_size+1]*2)
-            )
-            mst = minimum_spanning_tree(affinity_matrix).tocoo()
 
             # build train data
             context_bundles, context_mask_bundles = [], []
-            for r, c in zip(mst.row, mst.col):
+            for r, c in zip(pos_tuples[0], pos_tuples[1]):
                 pos_idx = inv_pos_map[(r, c)]
                 bundle = [input_examples[pos_idx].unsqueeze(0)] 
                 ctxt_mask_bundle = [ctxt_mask[pos_idx].unsqueeze(0)]

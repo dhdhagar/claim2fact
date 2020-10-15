@@ -217,6 +217,7 @@ def main(params):
     )
     logger.info('Done.')
 
+    uid_to_json = eval_data['uid_to_json']
     _cand_row = cand_graph.row
     _cand_col = cand_graph.col
     _cand_data = cand_graph.data

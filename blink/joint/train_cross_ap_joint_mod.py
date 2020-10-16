@@ -444,12 +444,12 @@ def train_one_epoch_mst_joint(
                         ctxt_reranker,
                         cand_reranker,
                         context_length
-                    )
+                    ).cpu()
                 )
             scores = torch.cat(scores)
 
             # compute mst, building necessary data structures
-            pos_tuples = idx_tuples[pos_mask].t().cpu().numpy()
+            pos_tuples = idx_tuples[pos_mask].t().numpy()
             inv_pos_map = {
                 (a, b) : c 
                     for a, b, c in zip(

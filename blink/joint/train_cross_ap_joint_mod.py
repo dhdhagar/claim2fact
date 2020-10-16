@@ -458,7 +458,7 @@ def train_one_epoch_mst_joint(
             }
 
             pos_rows, pos_cols = None, None
-            if i > 5000:
+            if step > 5000:
                 affinity_matrix = csr_matrix(
                     (-scores[pos_mask].cpu().numpy(), pos_tuples),
                     shape=tuple([cluster_size+1]*2)

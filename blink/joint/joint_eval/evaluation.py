@@ -156,7 +156,7 @@ def compute_coref_metrics(
     return coref_results
 
 
-def compute_linking_metrics(linking_graph, gold_linking_map):
+def compute_linking_metrics(linking_graph, gold_linking_map, seen_uids=None):
     global_graph = _merge_sparse_graphs([linking_graph])
 
     # compute recall
@@ -196,12 +196,22 @@ def compute_linking_metrics(linking_graph, gold_linking_map):
     # compute linking accuracy
     missed_vanilla_midxs = []
     linking_hits, linking_total = 0, 0
+    seen_hits, unseen_hits, seen_misses, unseen_misses = 0, 0, 0, 0
     pred_midx2eidx = {m : e for m, e in zip(midxs, pred_eidxs)}
     for midx, true_eidx in gold_linking_map.items():
         if true_eidx == pred_midx2eidx.get(midx, -1):
             linking_hits += 1
-        elif true_eidx in mention2cand[midx]:
-            missed_vanilla_midxs.append(midx)
+            if seen_uids is not None and true_eidx in seen_uids:
+                seen_hits += 1
+            elif seen_uids is not None and true_eidx not in seen_uids:
+                unseen_hits += 1
+        else:
+            if true_eidx in mention2cand[midx]:
+                missed_vanilla_midxs.append(midx)
+            if seen_uids is not None and true_eidx in seen_uids:
+                seen_misses += 1
+            elif seen_uids is not None and true_eidx not in seen_uids:
+                unseen_misses += 1
         linking_total += 1
 
     results_dict = {
@@ -209,8 +219,13 @@ def compute_linking_metrics(linking_graph, gold_linking_map):
             'vanilla_accuracy' : linking_hits / linking_total,
             'num_no_candidates' : len(no_candidates),
             'vanilla_pred_midx2eidx' : {m : e for m, e in zip(midxs, pred_eidxs)},
-            'vanilla_slim_graph' : slim_global_graph
+            'vanilla_slim_graph' : slim_global_graph,
     }
+    if seen_uids is not None:
+        results_dict.update({
+            'seen_accuracy' : seen_hits / (seen_hits + seen_misses),
+            'unseen_accuracy' : unseen_hits / (unseen_hits + unseen_misses)
+        })
 
     return results_dict, slim_global_graph
 

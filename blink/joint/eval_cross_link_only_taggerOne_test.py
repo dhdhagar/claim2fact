@@ -82,47 +82,51 @@ def create_eval_dataloader(
 
 def build_ground_truth(eval_data):
     # build gold linking map
-    zipped_gold_map = zip(
-        eval_data["context_uids"].tolist(),
-        map(lambda x : x.item(), eval_data["pos_cand_uids"])
-    )
-    gold_linking_map = {ctxt_uid : cand_uid
-                            for ctxt_uid, cand_uid in zipped_gold_map}
+    uid_to_json = eval_data['uid_to_json']
+    mention_uids = [k for k, v in uid_to_json.items() if 'title' not in v.keys()]
+    cuid_to_uid = {v['document_id'] : k for k, v in uid_to_json.items()
+                        if 'title' in v.keys()}
 
-    # build ground truth coref clusters
-    gold_coref_clusters = [
-        tuple(sorted([ctxt_uid] + coref_ctxts.tolist()))
-            for ctxt_uid, coref_ctxts in zip(
-                eval_data["context_uids"].tolist(),
-                eval_data["pos_coref_ctxt_uids"]
-            )
-    ]
-    gold_coref_clusters = [list(x) for x in set(gold_coref_clusters)]
+    gold_linking_map = {}
+    for muid in mention_uids:
+        label_cuid = uid_to_json[muid]['label_umls_cuid']
+        if label_cuid is not None:
+            gold_linking_map[muid] = cuid_to_uid.get(label_cuid, -1)
+        else:
+            gold_linking_map[muid] = -1
 
-    return gold_linking_map, gold_coref_clusters
+    return gold_linking_map
 
 
-def get_seen_uids(train_data, eval_data):
-    train_uid_to_json = train_data['uid_to_json']
-    train_mention_uids = [
-        k for k, v in train_uid_to_json.items() if 'title' not in v.keys()
-    ]
-    train_gold_entity_cuids = [
-        train_uid_to_json[muid]['label_umls_cuid']
-            for muid in train_mention_uids
-    ]
-    eval_uid_to_json = eval_data['uid_to_json']
-    eval_mention_uids = [
-        k for k, v in eval_uid_to_json.items() if 'title' not in v.keys()
-    ]
-    eval_cuid_to_uid = {
-        v['document_id'] : k for k, v in eval_uid_to_json.items()
-            if 'title' in v.keys()
+def get_taggerOne_metrics(eval_data):
+    uid_to_json = eval_data['uid_to_json']
+    mention_uids = [k for k, v in uid_to_json.items() if 'title' not in v.keys()]
+    cuid_to_type = {v['document_id'] : v['type'] for k, v in uid_to_json.items()
+                        if 'title' in v.keys()}
+
+    segment_hits, ner_hits, linking_hits = 0, 0, 0
+    for muid in mention_uids:
+        label_cuid = uid_to_json[muid]['label_umls_cuid'] 
+        pred_cuid = uid_to_json[muid]['taggerOne_pred_umls_cuid'] 
+        if label_cuid is not None:
+            segment_hits += 1
+            if cuid_to_type.get(label_cuid, None) == cuid_to_type.get(pred_cuid, -1):
+                ner_hits += 1
+                if label_cuid == pred_cuid:
+                    linking_hits += 1
+
+    num_pred_mentions = len(mention_uids)
+
+    taggerOne_metrics = {
+        'taggerOne num_pred_mentions' : num_pred_mentions,
+        'taggerOne segmentation hits' : segment_hits,
+        'taggerOne NER hits' : ner_hits,
+        'taggerOne linking hits' : linking_hits,
+        'taggerOne segmentation precision' : segment_hits / num_pred_mentions,
+        'taggerOne NER precision' : ner_hits / num_pred_mentions,
+        'taggerOne linking precision' : linking_hits / num_pred_mentions,
     }
-
-    seen_uids = [eval_cuid_to_uid.get(x,-1) for x in train_gold_entity_cuids]
-    seen_uids = list(filter(lambda x : x != -1, seen_uids))
-    return seen_uids
+    return taggerOne_metrics
 
 
 def score_contexts(
@@ -160,6 +164,7 @@ def score_contexts(
     edge_scores = torch.cat(edge_scores).unsqueeze(1)
     edges = torch.cat((edge_vertices, edge_scores), 1) 
     return edges
+
 
 def main(params):
 
@@ -209,28 +214,28 @@ def main(params):
         eval_data["knn_cand_uids"]
     )
 
-    # construct ground truth data
-    gold_linking_map, gold_coref_clusters = build_ground_truth(eval_data)
-
-    # get uids we trained on
-    train_data_fname = os.path.join(
-        params["data_path"],
-        "joint_train.t7"
-    )
-    train_data = torch.load(train_data_fname)
-    seen_uids = get_seen_uids(train_data, eval_data)
-
     # get all of the edges
     cand_edges = None
-    cand_edges = score_contexts(
-        cand_reranker,
-        cand_dataloader,
-        device=device,
-        logger=logger,
-        context_length=context_length,
-        suffix="cand",
-        silent=params["silent"],
-    )
+
+    dev_cache_path = os.path.join(eval_output_path, 'taggerOne_test_cand_edges.t7')
+    if not os.path.exists(dev_cache_path):
+        cand_edges = score_contexts(
+            cand_reranker,
+            cand_dataloader,
+            device=device,
+            logger=logger,
+            context_length=context_length,
+            suffix="cand",
+            silent=params["silent"],
+        )
+    else:
+        cand_edges = torch.load(dev_cache_path)
+
+    # construct ground truth data
+    gold_linking_map = build_ground_truth(eval_data)
+
+    # compute TaggerOne pred metrics
+    taggerOne_pred_metrics = get_taggerOne_metrics(eval_data)
 
     # construct the sparse graphs
     sparse_shape = tuple(2*[max(gold_linking_map.keys())+1])
@@ -244,54 +249,26 @@ def main(params):
 
     logger.info('Computing linking metrics...')
     linking_metrics, slim_linking_graph = compute_linking_metrics(
-        cand_graph, gold_linking_map, seen_uids=seen_uids
-    )
-    logger.info('Done.')
-
-    uid_to_json = eval_data['uid_to_json']
-    _cand_row = cand_graph.row
-    _cand_col = cand_graph.col
-    _cand_data = cand_graph.data
-    _gt_row, _gt_col, _gt_data = [], [], []
-    for r, c, d in zip(_cand_row, _cand_col, _cand_data):
-        if uid_to_json[r]['type'] == uid_to_json[c]['type']:
-            _gt_row.append(r)
-            _gt_col.append(c)
-            _gt_data.append(d)
-
-    gold_type_cand_graph = coo_matrix(
-        (_gt_data, (_gt_row, _gt_col)), shape=sparse_shape
-    )
-
-    logger.info('Computing gold-type linking metrics...')
-    gold_type_linking_metrics, slim_linking_graph = compute_linking_metrics(
-        gold_type_cand_graph, gold_linking_map, seen_uids=seen_uids
+        cand_graph, gold_linking_map
     )
     logger.info('Done.')
 
     metrics = {
-        'vanilla_recall' : linking_metrics['vanilla_recall'],
-        'vanilla_accuracy' : linking_metrics['vanilla_accuracy'],
-        'gold_type_vanilla_accuracy' : gold_type_linking_metrics['vanilla_accuracy'],
-        'seen_accuracy' : linking_metrics['seen_accuracy'],
-        'unseen_accuracy' : linking_metrics['unseen_accuracy'],
-        'gold_type_seen_accuracy' : gold_type_linking_metrics['seen_accuracy'],
-        'gold_type_unseen_accuracy' : gold_type_linking_metrics['unseen_accuracy'],
+        'e2e_taggerOne_cand_gen_recall' : linking_metrics['vanilla_recall'],
+        'e2e_vanilla_precision' : linking_metrics['vanilla_accuracy'],
     }
+    metrics.update(taggerOne_pred_metrics)
 
-    logger.info('joint_metrics: {}'.format(
+    logger.info('metrics: {}'.format(
         json.dumps(metrics, sort_keys=True, indent=4)
     ))
 
     # save all of the predictions for later analysis
     save_data = {}
+    save_data.update(metrics)
     save_data.update(linking_metrics)
-    gold_type_linking_metrics = {
-        'gold_type_'+k : v for k, v in gold_type_linking_metrics.items()
-    }
-    save_data.update(gold_type_linking_metrics)
 
-    save_fname = os.path.join(eval_output_path, 'results.t7')
+    save_fname = os.path.join(eval_output_path, 'taggerOne_test_results.t7')
     torch.save(save_data, save_fname)
 
 

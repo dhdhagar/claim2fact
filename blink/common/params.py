@@ -137,7 +137,7 @@ class BlinkParser(argparse.ArgumentParser):
         )
         parser.add_argument(
             "--lowercase",
-            action="store_false",
+            action="store_true",
             help="Whether to lower case the input text. True for uncased models, False for cased models.",
         )
         parser.add_argument("--context_key", default="context", type=str)
@@ -171,6 +171,9 @@ class BlinkParser(argparse.ArgumentParser):
         parser = self.add_argument_group("Model Training Arguments")
         parser.add_argument(
             "--evaluate", action="store_true", help="Whether to run evaluation."
+        )
+        parser.add_argument(
+            "--only_evaluate", action="store_true", help="Whether to only run eval on the validation set."
         )
         parser.add_argument(
             "--output_eval_file",
@@ -240,6 +243,14 @@ class BlinkParser(argparse.ArgumentParser):
             "--shuffle", type=bool, default=False, 
             help="Whether to shuffle train data",
         )
+        parser.add_argument(
+            "--knn", type=int, default=8, 
+            help="Number of kNN (positive+negative) candidates to fetch per mention query during training",
+        )
+        parser.add_argument(
+            "--filter_unlabeled", action="store_true",
+            help="Whether to filter mentions that have no labeled entities from the train set",
+        )
 
     def add_eval_args(self, args=None):
         """
@@ -280,6 +291,19 @@ class BlinkParser(argparse.ArgumentParser):
             default=None,
             type=str,
             help="Path for candidate encoding",
+        )
+        parser.add_argument(
+            "--filter_unlabeled", action="store_true",
+            help="Whether to filter mentions that have no labeled entities from the test set",
+        )
+        parser.add_argument(
+            "--knn", type=int, default=16,
+            help="Number of kNN mention candidates to fetch per mention query during inference",
+        )
+        parser.add_argument(
+            "--directed_graph",
+            action="store_true",
+            help="Whether to construct a directed graph for cluster-linking inference",
         )
 
     def add_joint_train_args(self, args=None):

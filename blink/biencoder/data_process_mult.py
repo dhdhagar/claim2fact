@@ -109,6 +109,7 @@ def process_mention_data(
     label_key="label",
     multi_label_key="labels",
     title_key='label_title',
+    label_id_key='label_id',
     ent_start_token=ENT_START_TAG,
     ent_end_token=ENT_END_TAG,
     title_token=ENT_TITLE_TAG,
@@ -143,7 +144,7 @@ def process_mention_data(
             labels = sample[multi_label_key]
         for l in labels:
             label = l[label_key]
-            label_idx = l["label_umls_cuid"]
+            label_idx = l[label_id_key]
             if label_idx not in doc2arr:
                 doc2arr[label_idx] = len(entity_dictionary)
                 title = l.get(title_key, None)
@@ -151,10 +152,9 @@ def process_mention_data(
                     label, tokenizer, max_cand_length, title,
                 )
                 entity_dictionary.append({
-                    "cui": l["label_umls_cuid"],
+                    "cui": label_idx,
                     "tokens": label_representation["tokens"],
                     "ids": label_representation["ids"],
-                    "doc_idx": label_idx,
                     "title": title,
                     "description": label,
                 })
@@ -162,7 +162,7 @@ def process_mention_data(
             record_cuis.append(label_idx)
         
         record = {
-            "mention_id": sample["mention_id"],
+            "mention_id": sample.get("mention_id", idx),
             "mention_name": sample["mention"],
             "context": context_tokens,
             "n_labels": len(record_labels),

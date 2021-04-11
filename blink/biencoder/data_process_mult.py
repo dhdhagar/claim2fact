@@ -107,7 +107,7 @@ def process_mention_data(
     mention_key="mention",
     context_key="context",
     label_key="label",
-    multi_label_key="labels",
+    multi_label_key=None,
     title_key='label_title',
     label_id_key='label_id',
     ent_start_token=ENT_START_TAG,

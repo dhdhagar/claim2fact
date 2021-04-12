@@ -21,7 +21,6 @@ OUTPUT_DIR = os.path.join(DATA_DIR, DATASET)
 SPLIT = 'test'
 
 # get all of the documents
-entity2idx = {}
 documents = {}
 doc_dir = os.path.join(DATA_DIR, DATASET, 'documents')
 for doc_fname in tqdm(os.listdir(doc_dir), desc='Processing entities and context'):
@@ -31,7 +30,6 @@ for doc_fname in tqdm(os.listdir(doc_dir), desc='Processing entities and context
             one_doc = json.loads(line.strip())
             doc_id = one_doc['document_id']
             documents[doc_id] = one_doc
-            entity2idx[doc_id] = idx
 
 
 # get all of the test mentions
@@ -66,8 +64,7 @@ with open(os.path.join(DATA_DIR, DATASET, 'mentions', SPLIT + '.json'), 'r') as 
             label = {
                 'label': label_doc['text'],
                 'label_title': label_doc['title'],
-                'label_id': entity2idx[label_document_id],
-                'label_umls_cuid': label_document_id
+                'label_id': label_document_id
             }
             transformed_mention['labels'].append(label)
         blink_mentions.append(transformed_mention)

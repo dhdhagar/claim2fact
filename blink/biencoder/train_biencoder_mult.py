@@ -186,12 +186,6 @@ def main(params):
 
     if not params["only_evaluate"]:
         # Load train data
-        train_samples = utils.read_dataset("train", params["data_path"])
-        if params["filter_unlabeled"]:
-            # Filter samples without gold entities
-            train_samples = list(filter(lambda sample: len(sample["labels"]) > 0, train_samples))
-        logger.info("Read %d train samples." % len(train_samples))
-
         train_dictionary_pkl_path = os.path.join(model_output_path, 'train_dictionary.pickle')
         train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
         if os.path.isfile(train_dictionary_pkl_path) and os.path.isfile(train_tensor_data_pkl_path):
@@ -201,14 +195,21 @@ def main(params):
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)
         else:
+            train_samples = utils.read_dataset("train", params["data_path"])
+            # Check if dataset has multiple ground-truth labels
+            mult_labels = "labels" in train_samples[0].keys()
+            if params["filter_unlabeled"]:
+                # Filter samples without gold entities
+                train_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), train_samples))
+            logger.info("Read %d train samples." % len(train_samples))
+
             _, train_dictionary, train_tensor_data = data.process_mention_data(
                 train_samples,
                 tokenizer,
                 params["max_context_length"],
                 params["max_cand_length"],
                 context_key=params["context_key"],
-                multi_label_key="labels",
-                label_id_key="label_umls_cuid",
+                multi_label_key="labels" if mult_labels else None,
                 silent=params["silent"],
                 logger=logger,
                 debug=params["debug"],
@@ -235,11 +236,6 @@ def main(params):
         )
 
     # Load eval data
-    valid_samples = utils.read_dataset("valid", params["data_path"])
-    # Filter samples without gold entities
-    valid_samples = list(filter(lambda sample: len(sample["labels"]) > 0, valid_samples))
-    logger.info("Read %d valid samples." % len(valid_samples))
-
     valid_dictionary_pkl_path = os.path.join(model_output_path, 'valid_dictionary.pickle')
     valid_tensor_data_pkl_path = os.path.join(model_output_path, 'valid_tensor_data.pickle')
     if os.path.isfile(valid_dictionary_pkl_path) and os.path.isfile(valid_tensor_data_pkl_path):
@@ -249,14 +245,20 @@ def main(params):
         with open(valid_tensor_data_pkl_path, 'rb') as read_handle:
             valid_tensor_data = pickle.load(read_handle)
     else:
+        valid_samples = utils.read_dataset("valid", params["data_path"])
+        # Check if dataset has multiple ground-truth labels
+        mult_labels = "labels" in valid_samples[0].keys()
+        # Filter samples without gold entities
+        valid_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), valid_samples))
+        logger.info("Read %d valid samples." % len(valid_samples))
+
         _, valid_dictionary, valid_tensor_data = data.process_mention_data(
             valid_samples,
             tokenizer,
             params["max_context_length"],
             params["max_cand_length"],
             context_key=params["context_key"],
-            multi_label_key="labels",
-            label_id_key="label_umls_cuid",
+            multi_label_key="labels" if mult_labels else None,
             silent=params["silent"],
             logger=logger,
             debug=params["debug"],
@@ -284,29 +286,23 @@ def main(params):
         )
         exit()
 
-
-    number_of_samples_per_dataset = {}
-
     time_start = time.time()
-
     utils.write_to_file(
         os.path.join(model_output_path, "training_params.txt"), str(params)
     )
-
     logger.info("Starting training")
     logger.info(
         "device: {} n_gpu: {}, distributed training: {}".format(device, n_gpu, False)
     )
 
+    # Set model to training mode
+    model.train()
     optimizer = get_optimizer(model, params)
     scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
-
-    model.train()
-
     best_epoch_idx = -1
     best_score = -1
-
     num_train_epochs = params["num_train_epochs"]
+    
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
         torch.cuda.empty_cache()
         tr_loss = 0

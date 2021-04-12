@@ -54,10 +54,12 @@ with open(os.path.join(DATA_DIR, DATASET, 'mentions', SPLIT + '.json'), 'r') as 
         transformed_mention['context_doc_id'] = one_mention['context_document_id']
         transformed_mention['type'] = one_mention['category']
         transformed_mention['labels'] = []
+        transformed_mention['unknown_label_ids'] = []
         for label_document_id in one_mention['label_document_id']:
             try:
                 label_doc = documents[label_document_id]
             except:
+                transformed_mention['unknown_label_ids'].append(label_document_id)
                 null_count += 1
                 print(f"label_document_id={label_document_id} not found in entity documents")
                 continue

@@ -7,6 +7,7 @@
 import os
 import random
 import time
+import pickle
 
 import numpy as np
 import torch
@@ -190,19 +191,35 @@ def main(params):
             train_samples = list(filter(lambda sample: len(sample["labels"]) > 0, train_samples))
         logger.info("Read %d train samples." % len(train_samples))
 
-        _, train_dictionary, train_tensor_data = data.process_mention_data(
-            train_samples,
-            tokenizer,
-            params["max_context_length"],
-            params["max_cand_length"],
-            context_key=params["context_key"],
-            multi_label_key="labels",
-            label_id_key="label_umls_cuid",
-            silent=params["silent"],
-            logger=logger,
-            debug=params["debug"],
-            knn=knn
-        )
+        train_dictionary_pkl_path = os.path.join(model_output_path, 'train_dictionary.pickle')
+        train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
+        if os.path.isfile(train_dictionary_pkl_path) and os.path.isfile(train_tensor_data_pkl_path):
+            print("Loading stored processed train data...")
+            with open(train_dictionary_pkl_path, 'rb') as read_handle:
+                train_dictionary = pickle.load(read_handle)
+            with open(train_tensor_data_pkl_path, 'rb') as read_handle:
+                train_tensor_data = pickle.load(read_handle)
+        else:
+            _, train_dictionary, train_tensor_data = data.process_mention_data(
+                train_samples,
+                tokenizer,
+                params["max_context_length"],
+                params["max_cand_length"],
+                context_key=params["context_key"],
+                multi_label_key="labels",
+                label_id_key="label_umls_cuid",
+                silent=params["silent"],
+                logger=logger,
+                debug=params["debug"],
+                knn=knn
+            )
+            print("Saving processed train data...")
+            with open(train_dictionary_pkl_path, 'wb') as write_handle:
+                pickle.dump(train_dictionary, write_handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
+            with open(train_tensor_data_pkl_path, 'wb') as write_handle:
+                pickle.dump(train_tensor_data, write_handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
 
         # Store the train dictionary vectors
         train_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], train_dictionary)), dtype=torch.long)
@@ -222,19 +239,35 @@ def main(params):
     valid_samples = list(filter(lambda sample: len(sample["labels"]) > 0, valid_samples))
     logger.info("Read %d valid samples." % len(valid_samples))
 
-    _, valid_dictionary, valid_tensor_data = data.process_mention_data(
-        valid_samples,
-        tokenizer,
-        params["max_context_length"],
-        params["max_cand_length"],
-        context_key=params["context_key"],
-        multi_label_key="labels",
-        label_id_key="label_umls_cuid",
-        silent=params["silent"],
-        logger=logger,
-        debug=params["debug"],
-        knn=knn
-    )
+    valid_dictionary_pkl_path = os.path.join(model_output_path, 'valid_dictionary.pickle')
+    valid_tensor_data_pkl_path = os.path.join(model_output_path, 'valid_tensor_data.pickle')
+    if os.path.isfile(valid_dictionary_pkl_path) and os.path.isfile(valid_tensor_data_pkl_path):
+        print("Loading stored processed valid data...")
+        with open(valid_dictionary_pkl_path, 'rb') as read_handle:
+            valid_dictionary = pickle.load(read_handle)
+        with open(valid_tensor_data_pkl_path, 'rb') as read_handle:
+            valid_tensor_data = pickle.load(read_handle)
+    else:
+        _, valid_dictionary, valid_tensor_data = data.process_mention_data(
+            valid_samples,
+            tokenizer,
+            params["max_context_length"],
+            params["max_cand_length"],
+            context_key=params["context_key"],
+            multi_label_key="labels",
+            label_id_key="label_umls_cuid",
+            silent=params["silent"],
+            logger=logger,
+            debug=params["debug"],
+            knn=knn
+        )
+        print("Saving processed valid data...")
+        with open(valid_dictionary_pkl_path, 'wb') as write_handle:
+            pickle.dump(valid_dictionary, write_handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+        with open(valid_tensor_data_pkl_path, 'wb') as write_handle:
+            pickle.dump(valid_tensor_data, write_handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
 
     # Store the valid dictionary vectors
     valid_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], valid_dictionary)), dtype=torch.long)

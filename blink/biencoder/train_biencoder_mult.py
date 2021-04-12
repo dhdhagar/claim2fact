@@ -26,6 +26,19 @@ from IPython import embed
 
 logger = None
 
+def batch_compute_embeddings(encoder, vectors, batch_size=32):
+    with torch.no_grad():
+        embeds = None
+        sampler = SequentialSampler(vectors)
+        dataloader = DataLoader(
+            vectors, sampler=sampler, batch_size=batch_size
+        )
+        iter_ = tqdm(dataloader, desc="Embedding in batches")
+        for step, batch in enumerate(iter_):
+            batch_embeds = encoder(batch.cuda())
+            embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
+    return embeds
+
 # The evaluate function makes a prediction on a set of knn candidates for every mention
 def evaluate(
     reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn
@@ -48,7 +61,7 @@ def evaluate(
 
     with torch.no_grad():
         # Compute dictionary embeddings at the beginning of every epoch
-        valid_dict_embeddings = reranker.encode_candidate(valid_dict_vecs.cuda())
+        valid_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, valid_dict_vecs)
         # Build the dictionary index
         d = valid_dict_embeddings.shape[1]
         nembeds = valid_dict_embeddings.shape[0]
@@ -267,7 +280,7 @@ def main(params):
 
         with torch.no_grad():
             # Compute dictionary embeddings at the beginning of every epoch
-            train_dict_embeddings = reranker.encode_candidate(train_dict_vecs.cuda())
+            train_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, train_dict_vecs)
             # Build the dictionary index
             d = train_dict_embeddings.shape[1]
             nembeds = train_dict_embeddings.shape[0]

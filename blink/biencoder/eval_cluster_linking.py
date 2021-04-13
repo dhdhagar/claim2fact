@@ -283,23 +283,48 @@ def main(params):
     directed_graph = params["directed_graph"]
 
     # Load test data
-    test_samples = utils.read_dataset("test", params["data_path"])
-    if params["filter_unlabeled"]:
-        # Filter samples without gold entities
-        test_samples = list(filter(lambda sample: len(sample["labels"]) > 0, test_samples))
-    logger.info("Read %d test samples." % len(test_samples))
+    test_dictionary_pkl_path = os.path.join(output_path, 'test_dictionary.pickle')
+    test_tensor_data_pkl_path = os.path.join(output_path, 'test_tensor_data.pickle')
+    test_mention_data_pkl_path = os.path.join(output_path, 'test_mention_data.pickle')
+    if os.path.isfile(test_dictionary_pkl_path) and os.path.isfile(test_tensor_data_pkl_path) and os.path.isfile(test_mention_data_pkl_path):
+        print("Loading stored processed test data...")
+        with open(test_dictionary_pkl_path, 'rb') as read_handle:
+            test_dictionary = pickle.load(read_handle)
+        with open(test_tensor_data_pkl_path, 'rb') as read_handle:
+            test_tensor_data = pickle.load(read_handle)
+        with open(test_mention_data_pkl_path, 'rb') as read_handle:
+            mention_data = pickle.load(read_handle)
+    else:
+        test_samples = utils.read_dataset("test", params["data_path"])
+        # Check if dataset has multiple ground-truth labels
+        mult_labels = "labels" in test_samples[0].keys()
+        if params["filter_unlabeled"]:
+            # Filter samples without gold entities
+            test_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), test_samples))
+        logger.info("Read %d test samples." % len(test_samples))
 
-    mention_data, test_dictionary, test_tensor_data = data.process_mention_data(
-        test_samples,
-        tokenizer,
-        params["max_context_length"],
-        params["max_cand_length"],
-        context_key=params["context_key"],
-        silent=params["silent"],
-        logger=logger,
-        debug=params["debug"],
-        knn=knn
-    )
+        mention_data, test_dictionary, test_tensor_data = data.process_mention_data(
+            test_samples,
+            tokenizer,
+            params["max_context_length"],
+            params["max_cand_length"],
+            multi_label_key="labels" if mult_labels else None,
+            context_key=params["context_key"],
+            silent=params["silent"],
+            logger=logger,
+            debug=params["debug"],
+            knn=knn
+        )
+        print("Saving processed test data...")
+        with open(test_dictionary_pkl_path, 'wb') as write_handle:
+            pickle.dump(test_dictionary, write_handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+        with open(test_tensor_data_pkl_path, 'wb') as write_handle:
+            pickle.dump(test_tensor_data, write_handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+        with open(test_mention_data_pkl_path, 'wb') as write_handle:
+            pickle.dump(mention_data, write_handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
 
     # Store test dictionary token ids
     test_dict_vecs = torch.tensor(

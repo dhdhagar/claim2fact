@@ -28,7 +28,7 @@ from IPython import embed
 
 logger = None
 
-def batch_compute_embeddings(encoder, vectors, batch_size=32, n_gpu=1):
+def batch_compute_embeddings(encoder, vectors, batch_size=128, n_gpu=1):
     with torch.no_grad():
         embeds = None
         sampler = SequentialSampler(vectors)
@@ -63,7 +63,7 @@ def evaluate(
 
     with torch.no_grad():
         # Compute dictionary embeddings at the beginning of every epoch
-        valid_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, valid_dict_vecs, n_gpu)
+        valid_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, valid_dict_vecs, n_gpu=n_gpu)
         # Build the dictionary index
         d = valid_dict_embeddings.shape[1]
         nembeds = valid_dict_embeddings.shape[0]
@@ -307,7 +307,7 @@ def main(params):
 
         with torch.no_grad():
             # Compute dictionary embeddings at the beginning of every epoch
-            train_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, entity_dict_vecs, n_gpu)
+            train_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, entity_dict_vecs, n_gpu=n_gpu)
             # Build the dictionary index
             d = train_dict_embeddings.shape[1]
             nembeds = train_dict_embeddings.shape[0]

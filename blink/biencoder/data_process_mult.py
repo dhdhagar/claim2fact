@@ -120,7 +120,7 @@ def process_mention_data(
 ):
     processed_samples = []
     dict_cui_to_idx = {}
-    for idx, ent in enumerate(entity_dictionary):
+    for idx, ent in enumerate(tqdm(entity_dictionary, desc="Tokenizing dictionary")):
         dict_cui_to_idx[ent["cui"]] = idx
         if not dictionary_processed:
             label_representation = get_candidate_representation(
@@ -135,7 +135,7 @@ def process_mention_data(
     if silent:
         iter_ = samples
     else:
-        iter_ = tqdm(samples)
+        iter_ = tqdm(samples, desc="Processing mentions")
 
     for idx, sample in enumerate(iter_):
         context_tokens = get_context_representation(

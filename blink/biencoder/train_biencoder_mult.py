@@ -188,7 +188,7 @@ def main(params):
         # Load train data
         entity_dictionary_pkl_path = os.path.join(model_output_path, 'entity_dictionary.pickle')
         train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
-        if os.path.isfile(train_dictionary_pkl_path) and os.path.isfile(train_tensor_data_pkl_path):
+        if os.path.isfile(entity_dictionary_pkl_path) and os.path.isfile(train_tensor_data_pkl_path):
             print("Loading stored processed train data...")
             with open(entity_dictionary_pkl_path, 'rb') as read_handle:
                 entity_dictionary = pickle.load(read_handle)

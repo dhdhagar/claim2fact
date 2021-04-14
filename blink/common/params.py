@@ -243,6 +243,7 @@ class BlinkParser(argparse.ArgumentParser):
             "--shuffle", type=bool, default=False, 
             help="Whether to shuffle train data",
         )
+        # Cluster-linking arguments
         parser.add_argument(
             "--knn", type=int, default=8, 
             help="Number of kNN (positive+negative) candidates to fetch per mention query during training",
@@ -292,6 +293,7 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="Path for candidate encoding",
         )
+        # Cluster-linking arguments
         parser.add_argument(
             "--filter_unlabeled", action="store_true",
             help="Whether to filter mentions that have no labeled entities from the test set",

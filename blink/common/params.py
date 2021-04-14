@@ -305,6 +305,10 @@ class BlinkParser(argparse.ArgumentParser):
             action="store_true",
             help="Whether to construct a directed graph for cluster-linking inference",
         )
+        parser.add_argument(
+            "--data_split", type=str, default="test",
+            help="The split of the dataset to run evaluation on",
+        )
 
     def add_joint_train_args(self, args=None):
         """

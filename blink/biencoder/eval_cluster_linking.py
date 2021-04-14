@@ -7,6 +7,7 @@
 
 import os
 import json
+import math
 import torch
 from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
@@ -90,20 +91,26 @@ def get_query_nn(model,
                  knn,
                  embeds,
                  index,
-                 q_embed):
+                 q_embed,
+                 searchK=None,
+                 gold_idxs=None):
     """
     Parameters
     ----------
     model : BiEncoderRanker
         trained biencoder model
     knn : int
-        the number of nearest-neighbours to retrieve
+        the number of nearest-neighbours to return
     embeds : ndarray
         matrix of embeddings
     index : faiss
         faiss index of the embeddings
-    q_dense_embed : ndarray
+    q_embed : ndarray
         2-D array containing the query embedding
+    searchK: int
+        optional parameter, the exact number of nearest-neighbours to retrieve and score
+    gold_idxs : array
+        optional parameter, list of golden cui indexes
 
     Returns
     -------
@@ -113,7 +120,7 @@ def get_query_nn(model,
         similarity scores for each nearest neighbour, sorted in descending order
     """
     # To accomodate the approximate-nature of the knn procedure, retrieve more samples and then filter down
-    k = max(16, 2*knn)
+    k = searchK if searchK is not None else max(16, 2*knn)
 
     # Find k nearest neighbours
     _, nn_idxs = index.search(q_embed, k)
@@ -128,6 +135,15 @@ def get_query_nn(model,
     nn_idxs, scores = zip(
         *sorted(zip(nn_idxs, scores), key=lambda x: -x[1]))
 
+    # Calculate the knn index at which the gold cui is found (-1 if not found)
+    for topk,i in enumerate(nn_idxs):
+        if i in gold_idxs:
+            break
+        topk = -1
+
+    if gold_idxs is not None:
+        # Return only the top k neighbours, and the recall index
+        return np.array(nn_idxs[:knn]), np.array(scores[:knn]), topk
     # Return only the top k neighbours
     return np.array(nn_idxs[:knn]), np.array(scores[:knn])
 
@@ -223,7 +239,7 @@ def analyzeClusters(clusters, dictionary, queries, knn):
             _debug_clusters_wo_entities += 1
             continue
         pred_entity = dictionary[pred_entity_idx]
-        pred_entity_cuis = [pred_entity['cui']]
+        pred_entity_cuis = [str(pred_entity['cui'])]
         _debug_tracked_mult_entities = False
         for i in range(1, len(cluster)):
             men_idx = cluster[i] - n_entities
@@ -239,7 +255,7 @@ def analyzeClusters(clusters, dictionary, queries, knn):
                 continue
             _debug_n_mens_evaluated += 1
             men_query = queries[men_idx]
-            men_golden_cuis = men_query['label_cuis']
+            men_golden_cuis = list(map(str, men_query['label_cuis']))
             report_obj = {
                 'mention_id': men_query['mention_id'],
                 'mention_name': men_query['mention_name'],
@@ -282,6 +298,7 @@ def main(params):
     knn = params["knn"]
     directed_graph = params["directed_graph"]
 
+    data_split = params["data_split"] # Parameter default is "test"
     # Load test data
     test_dictionary_pkl_path = os.path.join(output_path, 'test_dictionary.pickle')
     test_tensor_data_pkl_path = os.path.join(output_path, 'test_tensor_data.pickle')
@@ -295,7 +312,7 @@ def main(params):
         with open(test_mention_data_pkl_path, 'rb') as read_handle:
             mention_data = pickle.load(read_handle)
     else:
-        test_samples = utils.read_dataset("test", params["data_path"])
+        test_samples = utils.read_dataset(data_split, params["data_path"])
         # Check if dataset has multiple ground-truth labels
         mult_labels = "labels" in test_samples[0].keys()
         if params["filter_unlabeled"]:
@@ -368,13 +385,20 @@ def main(params):
         men_embeds, men_index = embed_and_index(
             reranker, test_men_vecs, 'context')
 
+        recall_accuracy, recall_idxs = 0., [0.]*16
+
         # Find the most similar entity and k-nn mentions for each mention query
         for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Fetching k-NN")):
             men_embed = np.expand_dims(men_embed, axis=0)
 
             # Fetch nearest entity candidate
-            dict_cand_idx, dict_cand_score = get_query_nn(
-                reranker, 1, dict_embeds, dict_index, men_embed)
+            gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
+            dict_cand_idx, dict_cand_score, recall_idx = get_query_nn(
+                reranker, 1, dict_embeds, dict_index, men_embed, gold_idxs=gold_idxs)
+            if recall_idx > -1:
+                recall_accuracy += 1.
+                recall_idxs[recall_idx] += 1.
+
 
             # Fetch (k+1) NN mention candidates
             men_cand_idxs, men_cand_scores = get_query_nn(
@@ -401,6 +425,13 @@ def main(params):
                         joint_graph['cols'], n_entities+men_cand_idxs[:k])
                     joint_graph['data'] = np.append(
                         joint_graph['data'], men_cand_scores[:k])
+
+        # Compute and print recall metric
+        recall_idx_mode = np.argmax(recall_idxs)
+        recall_idx_mode_prop = recall_idxs[recall_idx_mode]/np.sum(recall_idxs)
+        recall_accuracy /= len(men_embeds)
+        logger.info(f"recall@16 = {recall_accuracy}")
+        logger.info(f"highest recall idx = {recall_idx_mode} ({recall_idx_mode_prop})")
 
         # Pickle the graphs
         print("Saving joint graphs...")

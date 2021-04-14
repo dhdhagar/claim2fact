@@ -28,12 +28,12 @@ from IPython import embed
 
 logger = None
 
-def batch_compute_embeddings(encoder, vectors, batch_size=32):
+def batch_compute_embeddings(encoder, vectors, batch_size=32, n_gpu=1):
     with torch.no_grad():
         embeds = None
         sampler = SequentialSampler(vectors)
         dataloader = DataLoader(
-            vectors, sampler=sampler, batch_size=batch_size
+            vectors, sampler=sampler, batch_size=(batch_size * n_gpu)
         )
         iter_ = tqdm(dataloader, desc="Embedding in batches")
         for step, batch in enumerate(iter_):
@@ -43,7 +43,7 @@ def batch_compute_embeddings(encoder, vectors, batch_size=32):
 
 # The evaluate function makes a prediction on a set of knn candidates for every mention
 def evaluate(
-    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn
+    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu
 ):
     reranker.model.eval()
 
@@ -63,7 +63,7 @@ def evaluate(
 
     with torch.no_grad():
         # Compute dictionary embeddings at the beginning of every epoch
-        valid_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, valid_dict_vecs)
+        valid_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, valid_dict_vecs, n_gpu)
         # Build the dictionary index
         d = valid_dict_embeddings.shape[1]
         nembeds = valid_dict_embeddings.shape[0]
@@ -186,16 +186,19 @@ def main(params):
 
     if not params["only_evaluate"]:
         # Load train data
-        train_dictionary_pkl_path = os.path.join(model_output_path, 'train_dictionary.pickle')
+        entity_dictionary_pkl_path = os.path.join(model_output_path, 'entity_dictionary.pickle')
         train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
         if os.path.isfile(train_dictionary_pkl_path) and os.path.isfile(train_tensor_data_pkl_path):
             print("Loading stored processed train data...")
-            with open(train_dictionary_pkl_path, 'rb') as read_handle:
-                train_dictionary = pickle.load(read_handle)
+            with open(entity_dictionary_pkl_path, 'rb') as read_handle:
+                entity_dictionary = pickle.load(read_handle)
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)
         else:
             train_samples = utils.read_dataset("train", params["data_path"])
+            with open(os.path.join(params["data_path"], 'dictionary.pickle'), 'rb') as read_handle:
+                entity_dictionary = pickle.load(read_handle)
+
             # Check if dataset has multiple ground-truth labels
             mult_labels = "labels" in train_samples[0].keys()
             if params["filter_unlabeled"]:
@@ -203,8 +206,9 @@ def main(params):
                 train_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), train_samples))
             logger.info("Read %d train samples." % len(train_samples))
 
-            _, train_dictionary, train_tensor_data = data.process_mention_data(
+            _, entity_dictionary, train_tensor_data = data.process_mention_data(
                 train_samples,
+                entity_dictionary,
                 tokenizer,
                 params["max_context_length"],
                 params["max_cand_length"],
@@ -216,15 +220,15 @@ def main(params):
                 knn=knn
             )
             print("Saving processed train data...")
-            with open(train_dictionary_pkl_path, 'wb') as write_handle:
-                pickle.dump(train_dictionary, write_handle,
+            with open(entity_dictionary_pkl_path, 'wb') as write_handle:
+                pickle.dump(entity_dictionary, write_handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
             with open(train_tensor_data_pkl_path, 'wb') as write_handle:
                 pickle.dump(train_tensor_data, write_handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
-        # Store the train dictionary vectors
-        train_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], train_dictionary)), dtype=torch.long)
+        # Store the entity dictionary vectors
+        entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
 
         if params["shuffle"]:
             train_sampler = RandomSampler(train_tensor_data)
@@ -236,12 +240,9 @@ def main(params):
         )
 
     # Load eval data
-    valid_dictionary_pkl_path = os.path.join(model_output_path, 'valid_dictionary.pickle')
     valid_tensor_data_pkl_path = os.path.join(model_output_path, 'valid_tensor_data.pickle')
-    if os.path.isfile(valid_dictionary_pkl_path) and os.path.isfile(valid_tensor_data_pkl_path):
+    if os.path.isfile(valid_tensor_data_pkl_path):
         print("Loading stored processed valid data...")
-        with open(valid_dictionary_pkl_path, 'rb') as read_handle:
-            valid_dictionary = pickle.load(read_handle)
         with open(valid_tensor_data_pkl_path, 'rb') as read_handle:
             valid_tensor_data = pickle.load(read_handle)
     else:
@@ -252,8 +253,9 @@ def main(params):
         valid_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), valid_samples))
         logger.info("Read %d valid samples." % len(valid_samples))
 
-        _, valid_dictionary, valid_tensor_data = data.process_mention_data(
+        _, _, valid_tensor_data = data.process_mention_data(
             valid_samples,
+            entity_dictionary,
             tokenizer,
             params["max_context_length"],
             params["max_cand_length"],
@@ -262,18 +264,13 @@ def main(params):
             silent=params["silent"],
             logger=logger,
             debug=params["debug"],
-            knn=knn
+            knn=knn,
+            dictionary_processed=True
         )
         print("Saving processed valid data...")
-        with open(valid_dictionary_pkl_path, 'wb') as write_handle:
-            pickle.dump(valid_dictionary, write_handle,
-                        protocol=pickle.HIGHEST_PROTOCOL)
         with open(valid_tensor_data_pkl_path, 'wb') as write_handle:
             pickle.dump(valid_tensor_data, write_handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
-
-    # Store the valid dictionary vectors
-    valid_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], valid_dictionary)), dtype=torch.long)
 
     valid_sampler = SequentialSampler(valid_tensor_data)
     valid_dataloader = DataLoader(
@@ -282,7 +279,7 @@ def main(params):
 
     if params["only_evaluate"]:
         evaluate(
-            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, knn=knn
+            reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu
         )
         exit()
 
@@ -292,7 +289,7 @@ def main(params):
     )
     logger.info("Starting training")
     logger.info(
-        "device: {} n_gpu: {}, distributed training: {}".format(device, n_gpu, False)
+        "device: {} n_gpu: {}, data_parallel: {}".format(device, n_gpu, params["data_parallel"])
     )
 
     # Set model to training mode
@@ -310,7 +307,7 @@ def main(params):
 
         with torch.no_grad():
             # Compute dictionary embeddings at the beginning of every epoch
-            train_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, train_dict_vecs)
+            train_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, entity_dict_vecs, n_gpu)
             # Build the dictionary index
             d = train_dict_embeddings.shape[1]
             nembeds = train_dict_embeddings.shape[0]
@@ -349,14 +346,11 @@ def main(params):
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()                
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
                 candidate_inputs = np.concatenate((candidate_inputs, np.concatenate((gold_idxs, knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:knn]))
-            candidate_inputs = torch.tensor(list(map(lambda x: train_dict_vecs[x].numpy(), candidate_inputs))).cuda()
+            candidate_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), candidate_inputs))).cuda()
             context_inputs = context_inputs.cuda()
             label_inputs = label_inputs.cuda()
             
             loss, _ = reranker(context_inputs, candidate_inputs, label_inputs)
-
-            # if n_gpu > 1:
-            #     loss = loss.mean() # mean() to average on multi-gpu.
 
             if grad_acc_steps > 1:
                 loss = loss / grad_acc_steps
@@ -386,7 +380,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, knn=knn
+                    reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu
                 )
                 model.train()
                 logger.info("\n")
@@ -399,7 +393,7 @@ def main(params):
 
         output_eval_file = os.path.join(epoch_output_folder_path, "eval_results.txt")
         results = evaluate(
-            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, knn=knn
+            reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu
         )
 
         ls = [best_score, results["normalized_accuracy"]]
@@ -422,12 +416,6 @@ def main(params):
         model_output_path, "epoch_{}".format(best_epoch_idx)
     )
     utils.save_model(reranker.model, tokenizer, model_output_path)
-
-    if params["evaluate"]:
-        params["path_to_model"] = model_output_path
-        results = evaluate(
-            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, knn=knn
-        )
 
 
 if __name__ == "__main__":

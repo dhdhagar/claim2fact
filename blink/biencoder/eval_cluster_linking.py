@@ -313,6 +313,9 @@ def main(params):
             mention_data = pickle.load(read_handle)
     else:
         test_samples = utils.read_dataset(data_split, params["data_path"])
+        with open(os.path.join(params["data_path"], 'dictionary.pickle'), 'rb') as read_handle:
+            test_dictionary = pickle.load(read_handle)
+
         # Check if dataset has multiple ground-truth labels
         mult_labels = "labels" in test_samples[0].keys()
         if params["filter_unlabeled"]:
@@ -322,6 +325,7 @@ def main(params):
 
         mention_data, test_dictionary, test_tensor_data = data.process_mention_data(
             test_samples,
+            test_dictionary,
             tokenizer,
             params["max_context_length"],
             params["max_cand_length"],

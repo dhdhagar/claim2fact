@@ -99,11 +99,13 @@ def get_candidate_representation(
 
 def process_mention_data(
     samples,
+    entity_dictionary,
     tokenizer,
     max_context_length,
     max_cand_length,
     silent,
     knn,
+    dictionary_processed=False,
     mention_key="mention",
     context_key="context",
     label_key="label",
@@ -117,8 +119,15 @@ def process_mention_data(
     logger=None,
 ):
     processed_samples = []
-    entity_dictionary = []
-    doc2arr = {}
+    dict_cui_to_idx = {}
+    for idx, ent in enumerate(entity_dictionary):
+        dict_cui_to_idx[ent["cui"]] = idx
+        if not dictionary_processed:
+            label_representation = get_candidate_representation(
+                ent["description"], tokenizer, max_cand_length, ent["title"]
+            )
+            entity_dictionary[idx]["tokens"] = label_representation["tokens"]
+            entity_dictionary[idx]["ids"] = label_representation["ids"]
 
     if debug:
         samples = samples[:200]
@@ -145,20 +154,7 @@ def process_mention_data(
         for l in labels:
             label = l[label_key]
             label_idx = l[label_id_key]
-            if label_idx not in doc2arr:
-                doc2arr[label_idx] = len(entity_dictionary)
-                title = l.get(title_key, None)
-                label_representation = get_candidate_representation(
-                    label, tokenizer, max_cand_length, title,
-                )
-                entity_dictionary.append({
-                    "cui": label_idx,
-                    "tokens": label_representation["tokens"],
-                    "ids": label_representation["ids"],
-                    "title": title,
-                    "description": label,
-                })
-            record_labels.append(doc2arr[label_idx])
+            record_labels.append(dict_cui_to_idx[label_idx])
             record_cuis.append(label_idx)
         
         record = {
@@ -167,15 +163,9 @@ def process_mention_data(
             "context": context_tokens,
             "n_labels": len(record_labels),
             "label_idxs": record_labels + [-1]*(knn - len(record_labels)), # knn-length array with the starting elements representing the ground truth, and -1 elsewhere
-            "label_cuis": record_cuis
+            "label_cuis": record_cuis,
+            "type": sample["type"]
         }
-
-        if "world" in sample:
-            src = sample["world"]
-            src = world_to_id[src]
-            record["src"] = [src]
-        else:
-            record["src"] = [0] # pseudo-src
 
         processed_samples.append(record)
 

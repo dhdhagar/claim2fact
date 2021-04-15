@@ -28,7 +28,7 @@ from IPython import embed
 
 logger = None
 
-def batch_compute_embeddings(encoder, vectors, batch_size=128, n_gpu=1):
+def batch_compute_embeddings(encoder, vectors, batch_size=768, n_gpu=1):
     with torch.no_grad():
         embeds = None
         sampler = SequentialSampler(vectors)
@@ -76,7 +76,7 @@ def evaluate(
             # number of the quantized cells to probe
             nprobe = int(math.floor(math.sqrt(nlist)))
             quantizer = faiss.IndexFlatIP(d)
-            train_dict_index = faiss.IndexIVFFlat(
+            valid_dict_index = faiss.IndexIVFFlat(
                 quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
             )
             valid_dict_index.train(np.array(valid_dict_embeddings))

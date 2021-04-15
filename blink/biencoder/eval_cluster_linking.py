@@ -135,15 +135,15 @@ def get_query_nn(model,
     nn_idxs, scores = zip(
         *sorted(zip(nn_idxs, scores), key=lambda x: -x[1]))
 
-    # Calculate the knn index at which the gold cui is found (-1 if not found)
-    for topk,i in enumerate(nn_idxs):
-        if i in gold_idxs:
-            break
-        topk = -1
-
     if gold_idxs is not None:
+        # Calculate the knn index at which the gold cui is found (-1 if not found)
+        for topk,i in enumerate(nn_idxs):
+            if i in gold_idxs:
+                break
+            topk = -1
         # Return only the top k neighbours, and the recall index
         return np.array(nn_idxs[:knn]), np.array(scores[:knn]), topk
+    
     # Return only the top k neighbours
     return np.array(nn_idxs[:knn]), np.array(scores[:knn])
 

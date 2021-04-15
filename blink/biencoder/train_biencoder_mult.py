@@ -194,7 +194,7 @@ def main(params):
     if not params["only_evaluate"]:
         # Load train data
         train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
-        if os.path.isfile(entity_dictionary_pkl_path) and os.path.isfile(train_tensor_data_pkl_path):
+        if os.path.isfile(train_tensor_data_pkl_path):
             print("Loading stored processed train data...")
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)

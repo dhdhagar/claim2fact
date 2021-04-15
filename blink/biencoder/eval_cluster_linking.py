@@ -300,21 +300,26 @@ def main(params):
 
     data_split = params["data_split"] # Parameter default is "test"
     # Load test data
+    entity_dictionary_loaded = False
     test_dictionary_pkl_path = os.path.join(output_path, 'test_dictionary.pickle')
     test_tensor_data_pkl_path = os.path.join(output_path, 'test_tensor_data.pickle')
     test_mention_data_pkl_path = os.path.join(output_path, 'test_mention_data.pickle')
-    if os.path.isfile(test_dictionary_pkl_path) and os.path.isfile(test_tensor_data_pkl_path) and os.path.isfile(test_mention_data_pkl_path):
-        print("Loading stored processed test data...")
+    if os.path.isfile(test_dictionary_pkl_path):
+        print("Loading stored processed entity dictionary...")
         with open(test_dictionary_pkl_path, 'rb') as read_handle:
             test_dictionary = pickle.load(read_handle)
+        entity_dictionary_loaded = True
+    if os.path.isfile(test_tensor_data_pkl_path) and os.path.isfile(test_mention_data_pkl_path):
+        print("Loading stored processed test data...")
         with open(test_tensor_data_pkl_path, 'rb') as read_handle:
             test_tensor_data = pickle.load(read_handle)
         with open(test_mention_data_pkl_path, 'rb') as read_handle:
             mention_data = pickle.load(read_handle)
     else:
         test_samples = utils.read_dataset(data_split, params["data_path"])
-        with open(os.path.join(params["data_path"], 'dictionary.pickle'), 'rb') as read_handle:
-            test_dictionary = pickle.load(read_handle)
+        if not entity_dictionary_loaded:
+            with open(os.path.join(params["data_path"], 'dictionary.pickle'), 'rb') as read_handle:
+                test_dictionary = pickle.load(read_handle)
 
         # Check if dataset has multiple ground-truth labels
         mult_labels = "labels" in test_samples[0].keys()
@@ -334,12 +339,14 @@ def main(params):
             silent=params["silent"],
             logger=logger,
             debug=params["debug"],
-            knn=knn
+            knn=knn,
+            dictionary_processed=entity_dictionary_loaded
         )
         print("Saving processed test data...")
-        with open(test_dictionary_pkl_path, 'wb') as write_handle:
-            pickle.dump(test_dictionary, write_handle,
-                        protocol=pickle.HIGHEST_PROTOCOL)
+        if not entity_dictionary_loaded:
+            with open(test_dictionary_pkl_path, 'wb') as write_handle:
+                pickle.dump(test_dictionary, write_handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
         with open(test_tensor_data_pkl_path, 'wb') as write_handle:
             pickle.dump(test_tensor_data, write_handle,
                         protocol=pickle.HIGHEST_PROTOCOL)

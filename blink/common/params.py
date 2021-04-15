@@ -245,7 +245,7 @@ class BlinkParser(argparse.ArgumentParser):
         )
         # Cluster-linking arguments
         parser.add_argument(
-            "--knn", type=int, default=8, 
+            "--knn", type=int, default=10, 
             help="Number of kNN (positive+negative) candidates to fetch per mention query during training",
         )
         parser.add_argument(
@@ -299,7 +299,7 @@ class BlinkParser(argparse.ArgumentParser):
             help="Whether to filter mentions that have no labeled entities from the test set",
         )
         parser.add_argument(
-            "--knn", type=int, default=16,
+            "--knn", type=int, default=10,
             help="Number of kNN mention candidates to fetch per mention query during inference",
         )
         parser.add_argument(

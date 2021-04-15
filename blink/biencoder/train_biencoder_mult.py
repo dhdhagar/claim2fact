@@ -184,14 +184,16 @@ def main(params):
     if reranker.n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
+    entity_dictionary_pkl_path = os.path.join(model_output_path, 'entity_dictionary.pickle')
+    if os.path.isfile(entity_dictionary_pkl_path):
+        print("Loading stored processed entity dictionary...")
+        with open(entity_dictionary_pkl_path, 'rb') as read_handle:
+            entity_dictionary = pickle.load(read_handle)
     if not params["only_evaluate"]:
         # Load train data
-        entity_dictionary_pkl_path = os.path.join(model_output_path, 'entity_dictionary.pickle')
         train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
         if os.path.isfile(entity_dictionary_pkl_path) and os.path.isfile(train_tensor_data_pkl_path):
             print("Loading stored processed train data...")
-            with open(entity_dictionary_pkl_path, 'rb') as read_handle:
-                entity_dictionary = pickle.load(read_handle)
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)
         else:
@@ -278,6 +280,8 @@ def main(params):
     )
 
     if params["only_evaluate"]:
+        # Get the entity dictionary vectors
+        entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
         evaluate(
             reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu
         )

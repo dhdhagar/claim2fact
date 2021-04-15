@@ -184,11 +184,13 @@ def main(params):
     if reranker.n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
+    entity_dictionary_loaded = False
     entity_dictionary_pkl_path = os.path.join(model_output_path, 'entity_dictionary.pickle')
     if os.path.isfile(entity_dictionary_pkl_path):
         print("Loading stored processed entity dictionary...")
         with open(entity_dictionary_pkl_path, 'rb') as read_handle:
             entity_dictionary = pickle.load(read_handle)
+        entity_dictionary_loaded = True
     if not params["only_evaluate"]:
         # Load train data
         train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
@@ -198,8 +200,9 @@ def main(params):
                 train_tensor_data = pickle.load(read_handle)
         else:
             train_samples = utils.read_dataset("train", params["data_path"])
-            with open(os.path.join(params["data_path"], 'dictionary.pickle'), 'rb') as read_handle:
-                entity_dictionary = pickle.load(read_handle)
+            if not entity_dictionary_loaded:
+                with open(os.path.join(params["data_path"], 'dictionary.pickle'), 'rb') as read_handle:
+                    entity_dictionary = pickle.load(read_handle)
 
             # Check if dataset has multiple ground-truth labels
             mult_labels = "labels" in train_samples[0].keys()
@@ -219,12 +222,14 @@ def main(params):
                 silent=params["silent"],
                 logger=logger,
                 debug=params["debug"],
-                knn=knn
+                knn=knn,
+                dictionary_processed=entity_dictionary_loaded
             )
             print("Saving processed train data...")
-            with open(entity_dictionary_pkl_path, 'wb') as write_handle:
-                pickle.dump(entity_dictionary, write_handle,
-                            protocol=pickle.HIGHEST_PROTOCOL)
+            if not entity_dictionary_loaded:
+                with open(entity_dictionary_pkl_path, 'wb') as write_handle:
+                    pickle.dump(entity_dictionary, write_handle,
+                                protocol=pickle.HIGHEST_PROTOCOL)
             with open(train_tensor_data_pkl_path, 'wb') as write_handle:
                 pickle.dump(train_tensor_data, write_handle,
                             protocol=pickle.HIGHEST_PROTOCOL)

@@ -357,7 +357,7 @@ def main(params):
     n_mentions = len(test_tensor_data)
 
     # Values of k to run the evaluation against
-    knn_vals = [0] + [2**i for i in range(int(__import__('math').log(knn, 2)) + 1)]
+    knn_vals = [0] + [2**i for i in range(int(math.log(knn, 2)) + 1)]
     # Store the maximum evaluation k
     max_knn = knn_vals[-1]
 

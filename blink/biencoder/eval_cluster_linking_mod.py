@@ -8,7 +8,6 @@
 import os
 import json
 import math
-import time
 import torch
 from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
@@ -109,18 +108,16 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
     clusters : dict
         (optional) contains arrays of connected component indices of the graph
     """
-    rows, cols, data, shape = graph['rows'], graph['cols'], graph['data'], graph['shape']
-
     rows, cols, data = cluster_linking_partition(
-        rows,
-        cols,
-        data,
+        graph['rows'],
+        graph['cols'],
+        graph['data'],
         n_entities,
         directed
     )
     # Construct the partitioned graph
     partitioned_graph = coo_matrix(
-        (data, (rows, cols)), shape=shape)
+        (data, (rows, cols)), shape=graph['shape'])
 
     if return_clusters:
         # Get an array of the graph with each index marked with the component label that it is connected to
@@ -130,7 +127,7 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
             return_labels=True)
         # Store clusters of indices marked with labels with at least 2 connected components
         unique_cc_labels, cc_sizes = np.unique(cc_labels, return_counts=True)
-        filtered_labels = unique_cc_labels[cc_sizes >= 2]
+        filtered_labels = unique_cc_labels[cc_sizes > 1]
         clusters = defaultdict(list)
         for i, cc_label in enumerate(cc_labels):
             if cc_label in filtered_labels:
@@ -224,19 +221,16 @@ def analyzeClusters(clusters, dictionary, queries, knn):
 
     return results
 
+
 def main(params):
     output_path = params["output_path"]
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    logger = utils.get_logger(params["output_path"], 'log-eval')
+    logger = utils.get_logger(params["output_path"])
 
     pickle_src_path = params["pickle_src_path"]
     if pickle_src_path is None or not os.path.exists(pickle_src_path):
         pickle_src_path = output_path
-
-    embed_data_path = params["embed_data_path"]
-    if embed_data_path is None or not os.path.exists(embed_data_path):
-        embed_data_path = output_path
 
     # Init model
     reranker = BiEncoderRanker(params)
@@ -247,8 +241,9 @@ def main(params):
     n_gpu = reranker.n_gpu
 
     knn = params["knn"]
+    directed_graph = params["directed_graph"]
     use_types = params["use_types"]
-    data_split = params["data_split"] # Default = "test"
+    data_split = params["data_split"] # Parameter default is "test"
 
     # Load test data
     entity_dictionary_loaded = False
@@ -319,8 +314,6 @@ def main(params):
     # Store the maximum evaluation k
     max_knn = knn_vals[-1]
 
-    time_start = time.time()
-
     # Check if graphs are already built
     graph_path = os.path.join(output_path, 'graphs.pickle')
     if not params['only_recall'] and os.path.isfile(graph_path):
@@ -339,106 +332,64 @@ def main(params):
                 'shape': (n_entities+n_mentions, n_entities+n_mentions)
             }
 
-        # Check and load stored embedding data
-        embed_data_path = os.path.join(embed_data_path, 'embed_data.t7')
-        embed_data = None
-        if os.path.isfile(embed_data_path):
-            embed_data = torch.load(embed_data_path)
-
         if use_types:
-            if embed_data is not None:
-                logger.info('Loading stored embeddings and computing indexes')
-                dict_embeds = embed_data['dict_embeds']
-                if 'dict_idxs_by_type' in embed_data:
-                    dict_idxs_by_type = embed_data['dict_idxs_by_type']
-                else:
-                    dict_idxs_by_type = data_process.get_idxs_by_type(test_dictionary)
-                dict_indexes = data_process.get_index_from_embeds(dict_embeds, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-                men_embeds = embed_data['men_embeds']
-                if 'men_idxs_by_type' in embed_data:
-                    men_idxs_by_type = embed_data['men_idxs_by_type']
-                else:
-                    men_idxs_by_type = data_process.get_idxs_by_type(mention_data)
-                men_indexes = data_process.get_index_from_embeds(men_embeds, men_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-            else:
-                logger.info("Dictionary: Embedding and building index")
-                dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
-                logger.info("Queries: Embedding and building index")
-                men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
-        else:
-            if embed_data is not None:
-                logger.info('Loading stored embeddings and computing indexes')
-                dict_embeds = embed_data['dict_embeds']
-                dict_index = data_process.get_index_from_embeds(dict_embeds, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-                men_embeds = embed_data['men_embeds']
-                men_index = data_process.get_index_from_embeds(men_embeds, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-            else:
-                logger.info("Dictionary: Embedding and building index")
-                dict_embeds, dict_index = data_process.embed_and_index(
-                    reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
-                logger.info("Queries: Embedding and building index")
-                men_embeds, men_index = data_process.embed_and_index(
-                    reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+            print("Dictionary: Embedding and building index")
+            dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=True)
 
-        # Save computed embedding data if not loaded from disk
-        if embed_data is None:
-            embed_data = {}
-            embed_data['dict_embeds'] = dict_embeds
-            embed_data['men_embeds'] = men_embeds
-            if use_types:
-                embed_data['dict_idxs_by_type'] = dict_idxs_by_type
-                embed_data['men_idxs_by_type'] = men_idxs_by_type
-            # NOTE: Cannot pickle faiss index because it is a SwigPyObject
-            torch.save(embed_data, embed_data_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
+            # Verifiy embeddings
+            og_embeds = torch.load('models/trained/zeshel_og/eval/data_og/cand_encodes.t7')
+            world_to_type = {12:'forgotten_realms', 13:'lego', 14:'star_trek', 15:'yugioh'}
+            for world in og_embeds:
+                for i,oge in enumerate(tqdm(og_embeds[world])):
+                    dict_embed_idx = dict_idxs_by_type[world_to_type[world]][i]
+                    try:
+                        assert torch.eq(oge, torch.tensor(dict_embeds[dict_embed_idx]))
+                    except:
+                        embed()
+                        exit()
+            print('PASS')
+            exit()
+            print("Queries: Embedding and building index")
+            men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=True)
+        else:
+            print("Dictionary: Embedding and building index")
+            dict_embeds, dict_index = data_process.embed_and_index(
+                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu)
+            print("Queries: Embedding and building index")
+            men_embeds, men_index = data_process.embed_and_index(
+                reranker, test_men_vecs, 'context', n_gpu=n_gpu)
 
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
         recall_idxs = [0.]*params['recall_k']
 
-        logger.info("Starting KNN search...")
-        # Fetch recall_k (default 16) knn entities for all mentions
-        # Fetch (k+1) NN mention candidates
-        if not use_types:
-            nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, params['recall_k'])
-            nn_men_dists, nn_men_idxs = men_index.search(men_embeds, max_knn + 1)
-        else:
-            nn_ent_idxs = np.zeros((len(men_embeds), params['recall_k']))
-            nn_ent_dists = np.zeros((len(men_embeds), params['recall_k']), dtype='float64')
-            nn_men_idxs = np.zeros((len(men_embeds), max_knn + 1))
-            nn_men_dists = np.zeros((len(men_embeds), max_knn + 1), dtype='float64')
-            for entity_type in men_indexes:
-                men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type]]
-                nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, params['recall_k'])
-                nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, max_knn + 1)
-                nn_ent_idxs_by_type = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], nn_ent_idxs_by_type)))
-                nn_men_idxs_by_type = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], nn_men_idxs_by_type)))
-                for i,idx in enumerate(men_idxs_by_type[entity_type]):
-                    nn_ent_idxs[idx] = nn_ent_idxs_by_type[i]
-                    nn_ent_dists[idx] = nn_ent_dists_by_type[i]
-                    nn_men_idxs[idx] = nn_men_idxs_by_type[i]
-                    nn_men_dists[idx] = nn_men_dists_by_type[i]
-        logger.info("Search finished")
-
-        logger.info('Building graphs')
         # Find the most similar entity and k-nn mentions for each mention query
-        for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Building graph")):
-            # Get nearest entity candidate
-            dict_cand_idx = nn_ent_idxs[men_query_idx][0]
-            dict_cand_score = nn_ent_dists[men_query_idx][0]
-            # Compute recall metric
+        for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Fetching k-NN")):
+            men_embed = np.expand_dims(men_embed, axis=0)
+            
+            dict_type_idx_mapping, men_type_idx_mapping = None, None
+            if use_types:
+                entity_type = mention_data[men_query_idx]['type']
+                dict_index = dict_indexes[entity_type]
+                men_index = men_indexes[entity_type]
+                dict_type_idx_mapping = dict_idxs_by_type[entity_type]
+                men_type_idx_mapping = men_idxs_by_type[entity_type]
+            
+            # Fetch nearest entity candidate
             gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
-            recall_idx = np.argwhere(nn_ent_idxs[men_query_idx] == gold_idxs[0])
-            if len(recall_idx) != 0:
-                recall_idx = int(recall_idx)
+            dict_cand_idx, dict_cand_score, recall_idx = get_query_nn(
+                1, dict_embeds, dict_index, men_embed, searchK=params['recall_k'], gold_idxs=gold_idxs, type_idx_mapping=dict_type_idx_mapping)
+            # Compute recall metric
+            if recall_idx > -1:
                 recall_idxs[recall_idx] += 1.
                 for recall_k in recall_accuracy:
                     if recall_idx < recall_k:
                         recall_accuracy[recall_k] += 1.
 
             if not params['only_recall']:
+                # Fetch (k+1) NN mention candidates
+                men_cand_idxs, men_cand_scores = get_query_nn(
+                    max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
                 # Filter candidates to remove mention query and keep only the top k candidates
-                men_cand_idxs = nn_men_idxs[men_query_idx]
-                men_cand_scores = nn_men_dists[men_query_idx]
-                
                 filter_mask = men_cand_idxs != men_query_idx
                 men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
@@ -481,44 +432,25 @@ def main(params):
             pickle.dump(joint_graphs, write_handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
 
-    graph_mode = params.get('graph_mode', None)
-    
-    result_overview = {
-        'n_entities': n_entities,
-        'n_mentions': n_mentions
-    }
-    results = {}
-    if graph_mode is None or graph_mode not in ['directed', 'undirected']:
-        results['directed'] = []
-        results['undirected'] = []
-    else:
-        results[graph_mode] = []
+    results = []
+    for k in joint_graphs:
+        print(f"\nGraph (k={k}):")
+        # Partition graph based on cluster-linking constraints
+        partitioned_graph, clusters = partition_graph(
+            joint_graphs[k], n_entities, directed_graph, return_clusters=True)
+        # Infer predictions from clusters
+        result = analyzeClusters(clusters, test_dictionary, mention_data, k)
+        # Store result
+        results.append(result)
 
-    knn_fetch_time = time.time() - time_start
-    graph_processing_time = time.time()
-    n_graphs_processed = 0.
-
-    for mode in results:
-        print(f'\nEvaluation mode: {mode.upper()}')
-        for k in joint_graphs:
-            if k <= knn:
-                print(f"\nGraph (k={k}):")
-                # Partition graph based on cluster-linking constraints
-                partitioned_graph, clusters = partition_graph(
-                    joint_graphs[k], n_entities, mode == 'directed', return_clusters=True)
-                # Infer predictions from clusters
-                result = analyzeClusters(clusters, test_dictionary, mention_data, k)
-                # Store result
-                results[mode].append(result)
-                n_graphs_processed += 1
-
-    avg_graph_processing_time = (time.time() - graph_processing_time) / n_graphs_processed
-    avg_per_graph_time = (knn_fetch_time + avg_graph_processing_time) / 60
-
-    execution_time = (time.time() - time_start) / 60
     # Store results
     output_file_name = os.path.join(
         output_path, f"eval_results_{__import__('calendar').timegm(__import__('time').gmtime())}")
+    result_overview = {
+        'n_entities': results[0]['n_entities'],
+        'n_mentions': results[0]['n_mentions'],
+        'directed': directed_graph
+    }
 
     try:
         for recall_k in recall_accuracy:
@@ -526,24 +458,17 @@ def main(params):
     except:
         logger.info("Recall data not available since graphs were loaded from disk")
     
-    for mode in results:
-        mode_results = results[mode]
-        result_overview[mode] = {}
-        for r in mode_results:
-            k = r['knn_mentions']
-            result_overview[mode][f'accuracy@knn{k}'] = r['accuracy']
-            logger.info(f"{mode} accuracy@knn{k} = {r['accuracy']}")
-            output_file = f'{output_file_name}-{mode}-{k}.json'
-            with open(output_file, 'w') as f:
-                json.dump(r, f, indent=2)
-                print(f"\nPredictions ({mode}) @knn{k} saved at: {output_file}")
+    for r in results:
+        k = r['knn_mentions']
+        result_overview[f'accuracy@knn{k}'] = r['accuracy']
+        logger.info(f"accuracy@knn{k} = {r['accuracy']}")
+        output_file = f'{output_file_name}-{k}.json'
+        with open(output_file, 'w') as f:
+            json.dump(r, f, indent=2)
+            print(f"\nPredictions @knn{k} saved at: {output_file}")
     with open(f'{output_file_name}.json', 'w') as f:
         json.dump(result_overview, f, indent=2)
         print(f"\nPredictions overview saved at: {output_file_name}.json")
-    
-    logger.info("\nThe avg. per graph evaluation time is {} minutes\n".format(avg_per_graph_time))
-    logger.info("\nThe total evaluation took {} minutes\n".format(execution_time))
-
 
 
 if __name__ == "__main__":

@@ -81,7 +81,10 @@ def get_candidate_representation(
     cand_tokens = tokenizer.tokenize(candidate_desc)
     if candidate_title is not None:
         title_tokens = tokenizer.tokenize(candidate_title)
-        cand_tokens = title_tokens + [title_tag] + cand_tokens
+        if len(title_tokens) <= len(cand_tokens):
+            cand_tokens = title_tokens + [title_tag] + cand_tokens[(0 if title_tokens != cand_tokens[:len(title_tokens)] else len(title_tokens)):] # Filter title from description
+        else:
+            cand_tokens = title_tokens + [title_tag] + cand_tokens
 
     cand_tokens = cand_tokens[: max_seq_length - 2]
     cand_tokens = [cls_token] + cand_tokens + [sep_token]
@@ -161,13 +164,13 @@ def process_mention_data(
             "label_idx": [label_idx],
         }
 
-        # type_key = "world" if "world" in sample else "type"
-        # if type_key in sample:
-        #     src = sample[type_key]
-        #     src = world_to_id[src]
-        #     record["src"] = [src]
-        # else:
-        #     record["src"] = [0]     # pseudo src
+        type_key = "world" if "world" in sample else "type"
+        if type_key in sample:
+            src = sample[type_key]
+            src = world_to_id[src]
+            record["src"] = [src]
+        else:
+            record["src"] = [0]     # pseudo src
 
         processed_samples.append(record)
 
@@ -190,9 +193,9 @@ def process_mention_data(
     cand_vecs = torch.tensor(
         select_field(processed_samples, "label", "ids"), dtype=torch.long,
     )
-    # src_vecs = torch.tensor(
-    #     select_field(processed_samples, "src"), dtype=torch.long,
-    # )
+    src_vecs = torch.tensor(
+        select_field(processed_samples, "src"), dtype=torch.long,
+    )
     label_idx = torch.tensor(
         select_field(processed_samples, "label_idx"), dtype=torch.long,
     )
@@ -202,6 +205,6 @@ def process_mention_data(
         "label_idx": label_idx,
     }
 
-    # data["src"] = src_vecs
-    tensor_data = TensorDataset(context_vecs, cand_vecs, label_idx) # src_vecs
+    data["src"] = src_vecs
+    tensor_data = TensorDataset(context_vecs, cand_vecs, src_vecs, label_idx)
     return data, tensor_data

@@ -162,6 +162,20 @@ class BlinkParser(argparse.ArgumentParser):
             required=True,
             help="The output directory where generated output file (model, etc.) is to be dumped.",
         )
+        parser.add_argument(
+            "--pickle_src_path",
+            default=None,
+            type=str,
+            help="The directory from which to load intermediate processed data to skip redundant computation.",
+        )
+        parser.add_argument(
+            "--embed_batch_size", default=768, type=int, 
+            help="Batch size per GPU to use for the embed_and_index method"
+        )
+        parser.add_argument(
+            "--probe_mult_factor", default=1, type=int, 
+            help="Mutliplication factor to the square root of the total search space used in FAISS.GpuIndexIVFFlat.nprobe to indicate the number of vectors to compare during search"
+        )
 
 
     def add_training_args(self, args=None):
@@ -243,13 +257,30 @@ class BlinkParser(argparse.ArgumentParser):
             "--shuffle", type=bool, default=False, 
             help="Whether to shuffle train data",
         )
+        # Cluster-linking arguments
         parser.add_argument(
-            "--knn", type=int, default=8, 
+            "--knn", type=int, default=10, 
             help="Number of kNN (positive+negative) candidates to fetch per mention query during training",
         )
         parser.add_argument(
             "--filter_unlabeled", action="store_true",
             help="Whether to filter mentions that have no labeled entities from the train set",
+        )
+        parser.add_argument(
+            "--use_types", action="store_true",
+            help="Whether to pick candidates from only the entities belonging to the mention type",
+        )
+        parser.add_argument(
+            "--pos_neg_loss", action="store_true",
+            help="Whether to use both the positive and negative softmax values to compute the loss or to use only the positive",
+        )
+        parser.add_argument(
+            "--force_exact_search", action="store_true",
+            help="Whether to run FAISS nearest-neighbour retrieval in exact-search (IndexFlatIP) mode",
+        )
+        parser.add_argument(
+            "--use_types_for_eval", action="store_true",
+            help="Whether to use type information during evaluation when --use_types is False",
         )
 
     def add_eval_args(self, args=None):
@@ -292,18 +323,61 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="Path for candidate encoding",
         )
+        # Cluster-linking arguments
+        parser.add_argument(
+            "--graph_mode", type=str, default=None,
+            help="Whether to run evaluation in 'directed' or 'undirected' mode. Run both if not specified",
+        )
         parser.add_argument(
             "--filter_unlabeled", action="store_true",
             help="Whether to filter mentions that have no labeled entities from the test set",
         )
         parser.add_argument(
-            "--knn", type=int, default=16,
+            "--knn", type=int, default=10,
             help="Number of kNN mention candidates to fetch per mention query during inference",
         )
         parser.add_argument(
-            "--directed_graph",
-            action="store_true",
-            help="Whether to construct a directed graph for cluster-linking inference",
+            "--data_split", type=str, default="test",
+            help="The split of the dataset to run evaluation on",
+        )
+        parser.add_argument(
+            "--use_types", action="store_true",
+            help="Whether to pick candidates from only the entities belonging to the mention type",
+        )
+        parser.add_argument(
+            "--recall_k", type=int, default=16,
+            help="Number of kNN entity candidates to fetch to calculate the model's recall accuracy",
+        )
+        parser.add_argument(
+            "--only_recall", action="store_true",
+            help="Whether to run evaluation to only compute the recall metric for recall@{--recall_k}",
+        )
+        parser.add_argument(
+            "--force_exact_search", action="store_true",
+            help="Whether to run FAISS nearest-neighbour retrieval in exact-search (IndexFlatIP) mode",
+        )
+        # Entity discovery
+        parser.add_argument(
+            "--n_thresholds", type=int, default=10,
+            help="Number of thresholds to try out for entity discovery",
+        )
+        parser.add_argument(
+            "--exact_threshold", type=float, default=None,
+            help="Exact value of the similarity threshold to run the experiment against",
+        )
+        parser.add_argument(
+            "--exact_knn", type=int, default=None,
+            help="Exact value of the knn graph to run the experient against",
+        )
+        parser.add_argument(
+            "--embed_data_path",
+            default=None,
+            type=str,
+            help="The directory from which to load the embeddings data (embed_data.t7).",
+        )
+        parser.add_argument(
+            "--drop_all_entities", action="store_true",
+            help="Whether to run the discovery without any entities (usually for baseline)",
         )
 
     def add_joint_train_args(self, args=None):

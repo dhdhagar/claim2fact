@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Tenso
 from pytorch_transformers.tokenization_bert import BertTokenizer
 
 from blink.biencoder.biencoder import BiEncoderRanker
-import blink.biencoder.data_process as data
+import blink.biencoder.data_process_mod as data
 import blink.biencoder.nn_prediction as nnquery
 import blink.candidate_ranking.utils as utils
 from blink.biencoder.zeshel_utils import WORLDS, load_entity_dict_zeshel, Stats
@@ -254,8 +254,19 @@ def main(params):
             torch.save(candidate_encoding, cand_encode_path)
 
     test_samples = utils.read_dataset(params["mode"], params["data_path"])
+    
+    # test_samples_custom = utils.read_dataset(params["mode"], 'data/zeshel/processed')
+    
+    # # Copy custom dataset to original except 'label_id'
+    # for i in range(len(test_samples)):
+    #     for k in test_samples[i]:
+    #         if k == 'label_id':
+    #             continue
+    #         k_custom = 'type' if k == 'world' else k
+    #         test_samples[i][k] = test_samples_custom[i][k_custom]
+
     logger.info("Read %d test samples." % len(test_samples))
-   
+
     test_data, test_tensor_data = data.process_mention_data(
         test_samples,
         tokenizer,
@@ -266,6 +277,14 @@ def main(params):
         logger=logger,
         debug=params["debug"],
     )
+
+    # custom_embeds = torch.load('models/trained/zeshel_og/eval/data_og/custom_embed.t7')
+    # dict_idxs_by_type = torch.load('models/trained/zeshel_og/eval/data_og/dict_idx_mapping.t7')
+    # test_dict_vecs = torch.load('models/trained/zeshel_og/eval/data_og/custom_test_ent_vecs.t7')
+    # test_men_vecs = torch.load('models/trained/zeshel_og/eval/data_og/custom_test_men_vecs.t7')
+    # world_to_type = {12:'forgotten_realms', 13:'lego', 14:'star_trek', 15:'yugioh'}                    
+    # embed()
+
     test_sampler = SequentialSampler(test_tensor_data)
     test_dataloader = DataLoader(
         test_tensor_data, 

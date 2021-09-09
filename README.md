@@ -38,7 +38,7 @@ If you use ArboEL, please cite the following paper:
 - Install conda (we recommend 
 [miniconda](https://docs.conda.io/en/latest/miniconda.html))
 - Create an environment and install dependencies 
-    ```
+    ```bash
     conda create -n blink37 -y python=3.7 && conda activate blink37 && pip install -r requirements.txt && conda install cython pytorch==1.4.0 torchvision==0.5.0 cudatoolkit=10.1 -c pytorch
     ```
 - Our setup assumes GPU availability

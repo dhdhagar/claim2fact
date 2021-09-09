@@ -22,7 +22,7 @@ between mentions and entities.
 
 If you use ArboEL, please cite the following paper:
 
-```
+```bibtex
 @misc{agarwal2021entity,
       title={Entity Linking and Discovery via Arborescence-based Supervised Clustering}, 
       author={Dhruv Agarwal and Rico Angell and Nicholas Monath and Andrew McCallum},

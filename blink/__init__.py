@@ -1,3 +1,4 @@
+# Copyright (c) Dhruv Agarwal and Rico Angell and Nicholas Monath and Andrew McCallum.
 # Copyright (c) Facebook, Inc. and its affiliates.
 # All rights reserved.
 #

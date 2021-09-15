@@ -5,7 +5,7 @@ _(Arborescence-based Entity Linking)_
 ---
 
 Thanks to [BLINK](https://github.com/facebookresearch/BLINK) for the 
-initial infrastructure of this project!
+infrastructure of this project!
 
 ## Overview
 
@@ -109,3 +109,6 @@ python blink/biencoder/eval_entity_discovery.py --bert_model=models/biobert-base
 
 If you have any questions, comments, or feedback on our work, you can reach out at
 [dagarwal@cs.umass.edu](mailto:dagarwal@cs.umass.edu), or open a GitHub issue.
+
+## Licence
+ArboEL is MIT licensed. See the [LICENSE](LICENSE) file for details.

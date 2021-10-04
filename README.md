@@ -1,6 +1,6 @@
 # ArboEL
 
-_(Arborescence-based Entity Linking)_
+_(Entity Linking & Discovery via Arborescence-based Supervised Clustering)_
 
 ---
 

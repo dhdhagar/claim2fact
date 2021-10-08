@@ -1,10 +1,10 @@
-# ArboEL
+# claim2fact
 
-_(Entity Linking & Discovery via Arborescence-based Supervised Clustering)_
+_(Fool Me Once: Supervised Clustering for Fact-Checked Claim Retrieval)_
 
 ---
 
-Thanks to [BLINK](https://github.com/facebookresearch/BLINK) for the 
+Thanks to [arboEL](https://github.com/dhdhagar/arboEL) and [BLINK](https://github.com/facebookresearch/BLINK) for the 
 infrastructure of this project!
 
 ## Overview
@@ -108,11 +108,3 @@ Example command for MedMentions
 ```bash
 python blink/biencoder/eval_entity_discovery.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/eval/pos_neg_loss/directed --pickle_src_path=models/trained/medmentions/eval --embed_data_path=models/trained/medmentions_mst/eval/pos_neg_loss --use_types --force_exact_search --graph_mode=directed --exact_threshold=127.87733985396665 --exact_knn=8 --data_parallel
 ```
-
-## Questions / Feedback
-
-If you have any questions, comments, or feedback on our work, you can reach out at
-[dagarwal@cs.umass.edu](mailto:dagarwal@cs.umass.edu), or open a GitHub issue.
-
-## Licence
-ArboEL is MIT licensed. See the [LICENSE](LICENSE) file for details.

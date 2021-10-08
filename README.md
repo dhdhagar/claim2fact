@@ -41,6 +41,10 @@ If you use ArboEL, please cite the following paper:
     ```bash
     conda create -n blink37 -y python=3.7 && conda activate blink37 && pip install -r requirements.txt && conda install cython pytorch==1.4.0 torchvision==0.5.0 cudatoolkit=10.1 -c pytorch
     ```
+- Build cluster-linking special_partition function (from Cython)
+    ```bash
+    cd blink/biencoder/special_partition; python setup.py build_ext --inplace
+    ```
 - Our setup assumes GPU availability
   - The code for our paper was run using 2 NVIDIA Quadro RTX 8000
 

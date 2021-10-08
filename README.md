@@ -9,30 +9,6 @@ infrastructure of this project!
 
 ## Overview
 
-**Our paper:** https://arxiv.org/abs/2109.01242
-
-ArboEL is an entity linking and discovery system, which 
-uses a directed MST (arborescence) supervised clustering objective to train
-a bi-encoder BERT model coupled with a transductive graph partitioning inference routine
-that makes predictions by jointly considering links between mentions as well as 
-between mentions and entities.
-
-
-## Citing
-
-If you use ArboEL, please cite the following paper:
-
-```bibtex
-@misc{agarwal2021entity,
-      title={Entity Linking and Discovery via Arborescence-based Supervised Clustering}, 
-      author={Dhruv Agarwal and Rico Angell and Nicholas Monath and Andrew McCallum},
-      year={2021},
-      eprint={2109.01242},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL}
-}
-```
-
 ## Setting up
 
 - Install conda (we recommend 

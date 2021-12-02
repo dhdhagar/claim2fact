@@ -29,44 +29,16 @@ def get_context_representation(
     sample,
     tokenizer,
     max_seq_length,
-    mention_key="mention",
-    context_key="context",
-    ent_start_token=ENT_START_TAG,
-    ent_end_token=ENT_END_TAG,
+    mention_key="mention"
 ):
-    mention_tokens = []
-    if sample[mention_key] and len(sample[mention_key]) > 0:
-        mention_tokens = tokenizer.tokenize(sample[mention_key])
-        mention_tokens = [ent_start_token] + mention_tokens + [ent_end_token]
-
-    context_left = sample[context_key + "_left"]
-    context_right = sample[context_key + "_right"]
-    context_left = tokenizer.tokenize(context_left)
-    context_right = tokenizer.tokenize(context_right)
-
-    left_quota = (max_seq_length - len(mention_tokens)) // 2 - 1
-    right_quota = max_seq_length - len(mention_tokens) - left_quota - 2
-    left_add = len(context_left)
-    right_add = len(context_right)
-    if left_add <= left_quota:
-        if right_add > right_quota:
-            right_quota += left_quota - left_add
-    else:
-        if right_add <= right_quota:
-            left_quota += right_quota - right_add
-
-    context_tokens = (
-        context_left[-left_quota:] + mention_tokens + context_right[:right_quota]
-    )
-
-    context_tokens = ["[CLS]"] + context_tokens + ["[SEP]"]
-    input_ids = tokenizer.convert_tokens_to_ids(context_tokens)
+    mention_tokens = tokenizer.tokenize(sample[mention_key])
+    mention_tokens = ["[CLS]"] + mention_tokens[:max_seq_length - 2] + ["[SEP]"]
+    input_ids = tokenizer.convert_tokens_to_ids(mention_tokens)
     padding = [0] * (max_seq_length - len(input_ids))
     input_ids += padding
     assert len(input_ids) == max_seq_length
-
     return {
-        "tokens": context_tokens,
+        "tokens": mention_tokens,
         "ids": input_ids,
     }
 
@@ -80,7 +52,10 @@ def get_candidate_representation(
 ):
     cls_token = tokenizer.cls_token
     sep_token = tokenizer.sep_token
-    cand_tokens = tokenizer.tokenize(candidate_desc)
+    try:
+        cand_tokens = tokenizer.tokenize(candidate_desc)
+    except:
+        cand_tokens = []
     if candidate_title is not None:
         title_tokens = tokenizer.tokenize(candidate_title)
         if len(title_tokens) <= len(cand_tokens):
@@ -147,27 +122,32 @@ def process_mention_data(
             sample,
             tokenizer,
             max_context_length,
-            mention_key,
-            context_key,
-            ent_start_token,
-            ent_end_token,
+            mention_key
         )
 
         labels, record_labels, record_cuis = [sample], [], []
         if multi_label_key is not None:
             labels = sample[multi_label_key]
+        
+        not_found_in_dict = False
         for l in labels:
             label = l[label_key]
             label_idx = l[label_id_key]
+            if label_idx not in dict_cui_to_idx:
+                not_found_in_dict = True
+                break
             record_labels.append(dict_cui_to_idx[label_idx])
             record_cuis.append(label_idx)
         
+        if not_found_in_dict:
+            continue
+
         record = {
             "mention_id": sample.get("mention_id", idx),
             "mention_name": sample["mention"],
             "context": context_tokens,
             "n_labels": len(record_labels),
-            "label_idxs": record_labels + [-1]*(knn - len(record_labels)), # knn-length array with the starting elements representing the ground truth, and -1 elsewhere
+            "label_idxs": record_labels,
             "label_cuis": record_cuis,
             "type": sample["type"]
         }
@@ -258,7 +238,7 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
         )
         iter_ = tqdm(dataloader, desc="Embedding in batches")
         for step, batch in enumerate(iter_):
-            batch_embeds = encoder(batch.cuda())
+            batch_embeds = encoder(batch.cuda() if torch.cuda.is_available() else batch)
             embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
 
         if only_embed:

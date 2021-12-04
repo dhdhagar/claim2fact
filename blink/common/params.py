@@ -202,11 +202,11 @@ class BlinkParser(argparse.ArgumentParser):
             help="The txt file where the the evaluation results will be written.",
         )
         parser.add_argument(
-            "--train_batch_size", default=128, type=int, 
+            "--train_batch_size", default=8, type=int, 
             help="Total batch size for training."
         )
         parser.add_argument(
-            "--eval_batch_size", default=128, type=int,
+            "--eval_batch_size", default=8, type=int,
             help="Total batch size for evaluation.",
         )
         parser.add_argument(

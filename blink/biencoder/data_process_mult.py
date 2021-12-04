@@ -102,6 +102,8 @@ def process_mention_data(
     dict_cui_to_idx = {}
     for idx, ent in enumerate(tqdm(entity_dictionary, desc="Tokenizing dictionary")):
         dict_cui_to_idx[ent["cui"]] = idx
+        ent["description"] = "" if ent["description"] == float('nan') else ent["description"]
+        ent["title"] = "" if ent["title"] == float('nan') else ent["title"] 
         if not dictionary_processed:
             label_representation = get_candidate_representation(
                 ent["description"], tokenizer, max_cand_length, ent["title"]

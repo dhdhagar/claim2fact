@@ -390,7 +390,7 @@ def main(params):
                 embed_data['dict_idxs_by_type'] = dict_idxs_by_type
                 embed_data['men_idxs_by_type'] = men_idxs_by_type
             # NOTE: Cannot pickle faiss index because it is a SwigPyObject
-            torch.save(embed_data, embed_data_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
+            torch.save(embed_data, embed_data_path, pickle_protocol=4)
 
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
         recall_idxs = [0.]*params['recall_k']

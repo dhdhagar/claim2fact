@@ -8,7 +8,7 @@
 import os
 import random
 import time
-import pickle
+import pickle5 as pickle
 import numpy as np
 import torch
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler)
@@ -256,11 +256,11 @@ def main(params):
         with open(entity_dictionary_pkl_path, 'rb') as read_handle:
             entity_dictionary = pickle.load(read_handle)
         entity_dictionary_loaded = True
-    if not params["only_evaluate"]:
+    if not entity_dictionary_loaded or not params["only_evaluate"]:
         # Load train data
         train_tensor_data_pkl_path = os.path.join(pickle_src_path, 'train_tensor_data.pickle')
         train_processed_data_pkl_path = os.path.join(pickle_src_path, 'train_processed_data.pickle')
-        if os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_processed_data_pkl_path):
+        if entity_dictionary_loaded and os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_processed_data_pkl_path):
             print("Loading stored processed train data...")
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)
@@ -481,7 +481,7 @@ def main(params):
                 init_run_data['dict_idxs_by_type'] = dict_idxs_by_type
                 init_run_data['men_idxs_by_type'] = men_idxs_by_type
             # NOTE: Cannot pickle faiss index because it is a SwigPyObject
-            torch.save(init_run_data, init_run_pkl_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
+            torch.save(init_run_data, init_run_pkl_path, pickle_protocol=4)
 
         init_base_model_run = False
 

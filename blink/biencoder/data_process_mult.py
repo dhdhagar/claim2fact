@@ -240,7 +240,7 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
         )
         iter_ = tqdm(dataloader, desc="Embedding in batches")
         for step, batch in enumerate(iter_):
-            batch_embeds = encoder(batch.cuda() if torch.cuda.is_available() else batch)
+            batch_embeds = encoder(batch.cuda() if torch.cuda.is_available() else batch).numpy()
             embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
 
         if only_embed:

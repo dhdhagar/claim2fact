@@ -114,7 +114,7 @@ def process_mention_data(
     use_world = True
 
     id_to_idx = {}
-    label_id_is_int = True
+    label_id_is_int = False  # True : Forcing this to be False in order to compute small int labels
 
     for idx, sample in enumerate(iter_):
         context_tokens = get_context_representation(

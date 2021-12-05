@@ -101,7 +101,7 @@ def process_mention_data(
     processed_samples = []
     dict_cui_to_idx = {}
     for idx, ent in enumerate(tqdm(entity_dictionary, desc="Tokenizing dictionary")):
-        dict_cui_to_idx[ent["cui"]] = idx
+        dict_cui_to_idx[str(ent["cui"])] = idx
         description = ent["description"] if not use_desc_summaries else ent["summary"]
         description = "" if description == float('nan') else description
         ent["title"] = "" if ent["title"] == float('nan') else ent["title"] 
@@ -135,7 +135,7 @@ def process_mention_data(
         not_found_in_dict = False
         for l in labels:
             label = l[label_key]
-            label_idx = l[label_id_key]
+            label_idx = str(l[label_id_key])
             if label_idx not in dict_cui_to_idx:
                 not_found_in_dict = True
                 break

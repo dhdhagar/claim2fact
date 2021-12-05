@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
 from tqdm import tqdm
-import pickle
+import pickle5 as pickle
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from special_partition.special_partition import cluster_linking_partition

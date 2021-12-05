@@ -58,10 +58,7 @@ def get_candidate_representation(
         candidate_title = candidate_title.replace('PolitiFact | ', '')
         candidate_title = candidate_title.replace(' | Snopes.com', '')
         title_tokens = tokenizer.tokenize(candidate_title)
-        if len(title_tokens) <= len(cand_tokens):
-            cand_tokens = title_tokens + [title_tag] + cand_tokens[(0 if title_tokens != cand_tokens[:len(title_tokens)] else len(title_tokens)):] # Filter title from description
-        else:
-            cand_tokens = title_tokens + [title_tag] + cand_tokens
+        cand_tokens = title_tokens + [title_tag] + cand_tokens
 
     cand_tokens = cand_tokens[: max_seq_length - 2]
     cand_tokens = [cls_token] + cand_tokens + [sep_token]

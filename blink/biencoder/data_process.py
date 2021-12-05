@@ -9,6 +9,8 @@
 import logging
 import torch
 from tqdm import tqdm, trange
+import os
+import pickle5 as pickle
 from torch.utils.data import DataLoader, TensorDataset
 
 from pytorch_transformers.tokenization_bert import BertTokenizer
@@ -28,44 +30,16 @@ def get_context_representation(
     sample,
     tokenizer,
     max_seq_length,
-    mention_key="mention",
-    context_key="context",
-    ent_start_token=ENT_START_TAG,
-    ent_end_token=ENT_END_TAG,
+    mention_key="mention"
 ):
-    mention_tokens = []
-    if sample[mention_key] and len(sample[mention_key]) > 0:
-        mention_tokens = tokenizer.tokenize(sample[mention_key])
-        mention_tokens = [ent_start_token] + mention_tokens + [ent_end_token]
-
-    context_left = sample[context_key + "_left"]
-    context_right = sample[context_key + "_right"]
-    context_left = tokenizer.tokenize(context_left)
-    context_right = tokenizer.tokenize(context_right)
-
-    left_quota = (max_seq_length - len(mention_tokens)) // 2 - 1
-    right_quota = max_seq_length - len(mention_tokens) - left_quota - 2
-    left_add = len(context_left)
-    right_add = len(context_right)
-    if left_add <= left_quota:
-        if right_add > right_quota:
-            right_quota += left_quota - left_add
-    else:
-        if right_add <= right_quota:
-            left_quota += right_quota - right_add
-
-    context_tokens = (
-        context_left[-left_quota:] + mention_tokens + context_right[:right_quota]
-    )
-
-    context_tokens = ["[CLS]"] + context_tokens + ["[SEP]"]
-    input_ids = tokenizer.convert_tokens_to_ids(context_tokens)
+    mention_tokens = tokenizer.tokenize(sample[mention_key])
+    mention_tokens = ["[CLS]"] + mention_tokens[:max_seq_length - 2] + ["[SEP]"]
+    input_ids = tokenizer.convert_tokens_to_ids(mention_tokens)
     padding = [0] * (max_seq_length - len(input_ids))
     input_ids += padding
     assert len(input_ids) == max_seq_length
-
     return {
-        "tokens": context_tokens,
+        "tokens": mention_tokens,
         "ids": input_ids,
     }
 
@@ -81,8 +55,13 @@ def get_candidate_representation(
     sep_token = tokenizer.sep_token
     cand_tokens = tokenizer.tokenize(candidate_desc)
     if candidate_title is not None:
+        candidate_title = candidate_title.replace('PolitiFact | ', '')
+        candidate_title = candidate_title.replace((' | Snopes.com', ''), '')
         title_tokens = tokenizer.tokenize(candidate_title)
-        cand_tokens = title_tokens + [title_tag] + cand_tokens
+        if len(title_tokens) <= len(cand_tokens):
+            cand_tokens = title_tokens + [title_tag] + cand_tokens[(0 if title_tokens != cand_tokens[:len(title_tokens)] else len(title_tokens)):] # Filter title from description
+        else:
+            cand_tokens = title_tokens + [title_tag] + cand_tokens
 
     cand_tokens = cand_tokens[: max_seq_length - 2]
     cand_tokens = [cls_token] + cand_tokens + [sep_token]
@@ -113,7 +92,15 @@ def process_mention_data(
     title_token=ENT_TITLE_TAG,
     debug=False,
     logger=None,
+    params=None
 ):
+    if params is not None:
+        if params["use_desc_summaries"]:
+            dict_fpath = os.path.join(params["data_path"], 'dictionary.pickle')
+            with open(dict_fpath, 'rb') as read_handle:
+                dictionary = pickle.load(read_handle)
+            summaries = {str(fact["cui"]): fact["summary"] for fact in dictionary}
+    
     processed_samples = []
 
     if debug:
@@ -140,7 +127,7 @@ def process_mention_data(
             ent_end_token,
         )
 
-        label = sample[label_key]
+        label = sample[label_key] if not params["use_desc_summaries"] else summaries[str(sample["label_id"])]
         title = sample.get(title_key, None)
         label_tokens = get_candidate_representation(
             label, tokenizer, max_cand_length, title,

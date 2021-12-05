@@ -348,6 +348,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--no_sigmoid_train", action="store_true",
             help="Whether to force-prevent the use of sigmoid on the logits computed in cross-encoder training.",
         )
+        parser.add_argument(
+            "--use_desc_summaries", action="store_true",
+            help="Whether to use the summary of the fact article or the full-text.",
+        )
 
 
     def add_eval_args(self, args=None):

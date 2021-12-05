@@ -52,11 +52,10 @@ def get_candidate_representation(
 ):
     cls_token = tokenizer.cls_token
     sep_token = tokenizer.sep_token
-    try:
-        cand_tokens = tokenizer.tokenize(candidate_desc)
-    except:
-        cand_tokens = []
+    cand_tokens = tokenizer.tokenize(candidate_desc)
     if candidate_title is not None:
+        candidate_title = candidate_title.replace('PolitiFact | ', '')
+        candidate_title = candidate_title.replace((' | Snopes.com', ''), '')
         title_tokens = tokenizer.tokenize(candidate_title)
         if len(title_tokens) <= len(cand_tokens):
             cand_tokens = title_tokens + [title_tag] + cand_tokens[(0 if title_tokens != cand_tokens[:len(title_tokens)] else len(title_tokens)):] # Filter title from description
@@ -97,16 +96,18 @@ def process_mention_data(
     title_token=ENT_TITLE_TAG,
     debug=False,
     logger=None,
+    use_desc_summaries=False
 ):
     processed_samples = []
     dict_cui_to_idx = {}
     for idx, ent in enumerate(tqdm(entity_dictionary, desc="Tokenizing dictionary")):
         dict_cui_to_idx[ent["cui"]] = idx
-        ent["description"] = "" if ent["description"] == float('nan') else ent["description"]
+        description = ent["description"] if not use_desc_summaries else ent["summary"]
+        description = "" if description == float('nan') else description
         ent["title"] = "" if ent["title"] == float('nan') else ent["title"] 
         if not dictionary_processed:
             label_representation = get_candidate_representation(
-                ent["description"], tokenizer, max_cand_length, ent["title"]
+                description, tokenizer, max_cand_length, ent["title"]
             )
             entity_dictionary[idx]["tokens"] = label_representation["tokens"]
             entity_dictionary[idx]["ids"] = label_representation["ids"]

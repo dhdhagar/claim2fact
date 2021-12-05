@@ -261,7 +261,7 @@ def main(params):
         with open(test_dictionary_pkl_path, 'rb') as read_handle:
             test_dictionary = pickle.load(read_handle)
         entity_dictionary_loaded = True
-    if os.path.isfile(test_tensor_data_pkl_path) and os.path.isfile(test_mention_data_pkl_path):
+    if entity_dictionary_loaded and os.path.isfile(test_tensor_data_pkl_path) and os.path.isfile(test_mention_data_pkl_path):
         print("Loading stored processed test data...")
         with open(test_tensor_data_pkl_path, 'rb') as read_handle:
             test_tensor_data = pickle.load(read_handle)

@@ -91,12 +91,10 @@ def process_mention_data(
     logger=None,
     params=None
 ):
-    if params is not None:
-        if params["use_desc_summaries"]:
-            dict_fpath = os.path.join(params["data_path"], 'dictionary.pickle')
-            with open(dict_fpath, 'rb') as read_handle:
-                dictionary = pickle.load(read_handle)
-            summaries = {str(fact["cui"]): fact["summary"] for fact in dictionary}
+    dict_fpath = os.path.join(params["data_path"], 'dictionary.pickle')
+    with open(dict_fpath, 'rb') as read_handle:
+        dictionary = pickle.load(read_handle)
+    dictionary = {str(fact["cui"]): fact for fact in dictionary}
     
     processed_samples = []
 
@@ -108,10 +106,8 @@ def process_mention_data(
     else:
         iter_ = tqdm(samples)
 
-    use_world = True
-
     id_to_idx = {}
-    label_id_is_int = False  # True : Forcing this to be False in order to compute small int labels
+    label_id_is_int = False  # Forcing this to be False in order to compute small int labels
 
     for idx, sample in enumerate(iter_):
         context_tokens = get_context_representation(
@@ -121,8 +117,8 @@ def process_mention_data(
             mention_key,
         )
 
-        label = sample[label_key] if not params["use_desc_summaries"] else summaries[str(sample["label_id"])]
-        title = sample.get(title_key, None)
+        label = dictionary[str(sample["label_id"])]["description" if not params["use_desc_summaries"] else "summary"]
+        title = dictionary[str(sample["label_id"])]["title"]
         label_tokens = get_candidate_representation(
             label, tokenizer, max_cand_length, title,
         )
@@ -142,14 +138,6 @@ def process_mention_data(
             "label": label_tokens,
             "label_idx": [label_idx],
         }
-
-        # type_key = "world" if "world" in sample else "type"
-        # if type_key in sample:
-        #     src = sample[type_key]
-        #     src = world_to_id[src]
-        #     record["src"] = [src]
-        # else:
-        #     record["src"] = [0]     # pseudo src
 
         processed_samples.append(record)
 
@@ -172,9 +160,6 @@ def process_mention_data(
     cand_vecs = torch.tensor(
         select_field(processed_samples, "label", "ids"), dtype=torch.long,
     )
-    # src_vecs = torch.tensor(
-    #     select_field(processed_samples, "src"), dtype=torch.long,
-    # )
     label_idx = torch.tensor(
         select_field(processed_samples, "label_idx"), dtype=torch.long,
     )
@@ -184,6 +169,5 @@ def process_mention_data(
         "label_idx": label_idx,
     }
 
-    # data["src"] = src_vecs
-    tensor_data = TensorDataset(context_vecs, cand_vecs, label_idx) # src_vecs
+    tensor_data = TensorDataset(context_vecs, cand_vecs, label_idx)
     return data, tensor_data

@@ -122,9 +122,6 @@ def process_mention_data(
             tokenizer,
             max_context_length,
             mention_key,
-            context_key,
-            ent_start_token,
-            ent_end_token,
         )
 
         label = sample[label_key] if not params["use_desc_summaries"] else summaries[str(sample["label_id"])]

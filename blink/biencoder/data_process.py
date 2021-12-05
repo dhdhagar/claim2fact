@@ -56,7 +56,7 @@ def get_candidate_representation(
     cand_tokens = tokenizer.tokenize(candidate_desc)
     if candidate_title is not None:
         candidate_title = candidate_title.replace('PolitiFact | ', '')
-        candidate_title = candidate_title.replace((' | Snopes.com', ''), '')
+        candidate_title = candidate_title.replace(' | Snopes.com', '')
         title_tokens = tokenizer.tokenize(candidate_title)
         if len(title_tokens) <= len(cand_tokens):
             cand_tokens = title_tokens + [title_tag] + cand_tokens[(0 if title_tokens != cand_tokens[:len(title_tokens)] else len(title_tokens)):] # Filter title from description

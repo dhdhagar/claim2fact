@@ -43,6 +43,12 @@ def get_context_representation(
         "ids": input_ids,
     }
 
+def filter_learnffc_cand_title(candidate_title):
+    candidate_title = candidate_title.replace('PolitiFact | ', '')
+    candidate_title = candidate_title.replace(' | Snopes.com', '')
+    candidate_title = candidate_title.replace('PolitiFact ', '')
+    candidate_title = candidate_title.replace(' Snopescom', '')
+    return candidate_title
 
 def get_candidate_representation(
     candidate_desc, 
@@ -55,8 +61,7 @@ def get_candidate_representation(
     sep_token = tokenizer.sep_token
     cand_tokens = tokenizer.tokenize(candidate_desc)
     if candidate_title is not None:
-        candidate_title = candidate_title.replace('PolitiFact | ', '')
-        candidate_title = candidate_title.replace(' | Snopes.com', '')
+        candidate_title = filter_learnffc_cand_title(candidate_title)
         title_tokens = tokenizer.tokenize(candidate_title)
         cand_tokens = title_tokens + [title_tag] + cand_tokens
 

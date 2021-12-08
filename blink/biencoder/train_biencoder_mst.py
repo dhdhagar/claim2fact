@@ -308,7 +308,8 @@ def main(params):
                 logger=logger,
                 debug=params["debug"],
                 knn=knn,
-                dictionary_processed=entity_dictionary_loaded
+                dictionary_processed=entity_dictionary_loaded,
+                use_desc_summaries=params["use_desc_summaries"],
             )
             print("Saving processed train data...")
             if not entity_dictionary_loaded:
@@ -360,7 +361,8 @@ def main(params):
             logger=logger,
             debug=params["debug"],
             knn=knn,
-            dictionary_processed=True
+            dictionary_processed=True,
+            use_desc_summaries=params["use_desc_summaries"]
         )
         print("Saving processed valid data...")
         with open(valid_tensor_data_pkl_path, 'wb') as write_handle:
@@ -781,7 +783,7 @@ def main(params):
         epoch_output_folder_path = os.path.join(
             model_output_path, "epoch_{}".format(epoch_idx)
         )
-        utils.save_model(model, tokenizer, epoch_output_folder_path, scheduler, optimizer)
+        utils.save_model(model, tokenizer, epoch_output_folder_path)
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
         eval_accuracy, dict_embed_data = evaluate(
@@ -811,7 +813,7 @@ def main(params):
     params["path_to_model"] = os.path.join(
         model_output_path, "epoch_{}".format(best_epoch_idx)
     )
-    utils.save_model(reranker.model, tokenizer, model_output_path, scheduler, optimizer)
+    utils.save_model(reranker.model, tokenizer, model_output_path)
     logger.info(f"Best model saved at {model_output_path}")
 
 

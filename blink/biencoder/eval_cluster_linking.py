@@ -292,7 +292,8 @@ def main(params):
             logger=logger,
             debug=params["debug"],
             knn=knn,
-            dictionary_processed=entity_dictionary_loaded
+            dictionary_processed=entity_dictionary_loaded,
+            use_desc_summaries=params["use_desc_summaries"],
         )
         print("Saving processed test data...")
         if not entity_dictionary_loaded:

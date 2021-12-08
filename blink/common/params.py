@@ -485,6 +485,10 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="Directory from which to store/load nearest biencoder indices for cross-encoder training.",
         )
+        parser.add_argument(
+            "--use_desc_summaries", action="store_true",
+            help="Whether to use the summary of the fact article or the full-text.",
+        )
 
     def add_joint_train_args(self, args=None):
         """

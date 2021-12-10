@@ -620,22 +620,13 @@ def main(params):
                     # Find MST with entity constraint
                     csr = csr_matrix((data, (rows, cols)), shape=shape)
                     mst = minimum_spanning_tree(csr).tocoo()
-                    if len(cluster_mens) != len(mst.row):
-                        row, col, data = np.array(rows), np.array(cols), np.array(data)
-                        rows, cols, data = cluster_linking_partition(np.concatenate((row, col)), 
-                                                                 np.concatenate((col, row)), 
-                                                                 np.concatenate((-data, -data)), 
-                                                                 n_entities, 
-                                                                 directed=True, 
-                                                                 silent=True)    
-                    else:
-                        rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
-                                                                    np.concatenate((mst.col,mst.row)), 
-                                                                    np.concatenate((-mst.data, -mst.data)), 
-                                                                    n_entities, 
-                                                                    directed=True, 
-                                                                    silent=True)
-                    assert np.array_equal(rows - n_entities, cluster_mens)
+                    rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
+                                                                np.concatenate((mst.col,mst.row)), 
+                                                                np.concatenate((-mst.data, -mst.data)), 
+                                                                n_entities, 
+                                                                directed=True, 
+                                                                silent=True)
+                    # assert np.array_equal(rows - n_entities, cluster_mens)
                     
                     for i in range(len(rows)):
                         men_idx = rows[i] - n_entities
@@ -650,6 +641,12 @@ def main(params):
                                 break
                         if add_link:
                             gold_links[men_idx] = cols[i]
+                    # FIX: Add mention-to-entity edge for those mentions skipped during MST call
+                    for i in range(len(cluster_mens)):
+                        men_idx = cluster_mens[i]
+                        if men_idx in gold_links:
+                            continue
+                        gold_links[men_idx] = cluster_ent
                     gold_link_idx = gold_links[mention_idx]
                     
                 # Retrieve the pre-computed nearest neighbours

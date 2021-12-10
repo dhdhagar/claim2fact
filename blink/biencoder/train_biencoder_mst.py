@@ -620,12 +620,21 @@ def main(params):
                     # Find MST with entity constraint
                     csr = csr_matrix((data, (rows, cols)), shape=shape)
                     mst = minimum_spanning_tree(csr).tocoo()
-                    rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
-                                                                 np.concatenate((mst.col,mst.row)), 
-                                                                 np.concatenate((-mst.data, -mst.data)), 
+                    if len(cluster_mens) != len(mst.row):
+                        row, col, data = np.array(rows), np.array(cols), np.array(data)
+                        rows, cols, data = cluster_linking_partition(np.concatenate((row, col)), 
+                                                                 np.concatenate((col, row)), 
+                                                                 np.concatenate((-data, -data)), 
                                                                  n_entities, 
                                                                  directed=True, 
-                                                                 silent=True)
+                                                                 silent=True)    
+                    else:
+                        rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
+                                                                    np.concatenate((mst.col,mst.row)), 
+                                                                    np.concatenate((-mst.data, -mst.data)), 
+                                                                    n_entities, 
+                                                                    directed=True, 
+                                                                    silent=True)
                     assert np.array_equal(rows - n_entities, cluster_mens)
                     
                     for i in range(len(rows)):

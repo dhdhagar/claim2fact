@@ -352,6 +352,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--use_desc_summaries", action="store_true",
             help="Whether to use the summary of the fact article or the full-text.",
         )
+        parser.add_argument(
+            "--use_rand_negs", action="store_true",
+            help="Whether to use random in-batch negatives for training instead of hard k-NN negatives.",
+        )
 
 
     def add_eval_args(self, args=None):

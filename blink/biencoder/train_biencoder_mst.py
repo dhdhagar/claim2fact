@@ -217,6 +217,7 @@ def main(params):
     gold_arbo_knn = params["gold_arbo_knn"]
 
     within_doc = params["within_doc"]
+    use_rand_negs = params["use_rand_negs"]
 
     # Init model
     reranker = BiEncoderRanker(params)
@@ -620,13 +621,15 @@ def main(params):
                     # Find MST with entity constraint
                     csr = csr_matrix((data, (rows, cols)), shape=shape)
                     mst = minimum_spanning_tree(csr).tocoo()
-                    rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
-                                                                np.concatenate((mst.col,mst.row)), 
-                                                                np.concatenate((-mst.data, -mst.data)), 
-                                                                n_entities, 
-                                                                directed=True, 
-                                                                silent=True)
-                    # assert np.array_equal(rows - n_entities, cluster_mens)
+                    rows = []
+                    if len(mst.row) != 0:
+                        rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
+                                                                    np.concatenate((mst.col,mst.row)), 
+                                                                    np.concatenate((-mst.data, -mst.data)), 
+                                                                    n_entities, 
+                                                                    directed=True, 
+                                                                    silent=True)
+                        # assert np.array_equal(rows - n_entities, cluster_mens)
                     
                     for i in range(len(rows)):
                         men_idx = rows[i] - n_entities
@@ -649,48 +652,32 @@ def main(params):
                         gold_links[men_idx] = cluster_ent
                     gold_link_idx = gold_links[mention_idx]
                     
-                # Retrieve the pre-computed nearest neighbours
-                knn_dict_idxs = dict_nns[mention_idx]
-                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                knn_men_idxs = men_nns[mention_idx][men_nns[mention_idx] != -1]
-                knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
-                if within_doc:
-                    knn_men_idxs, _ = filter_by_context_doc_id(knn_men_idxs,
-                                                               train_context_doc_ids[mention_idx],
-                                                               train_context_doc_ids, return_numpy=True)
-                # Add the negative examples
-                neg_mens = list(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
-                # Track queries with no valid mention negatives
-                if len(neg_mens) == 0:
-                    context_inputs_mask[m_embed_idx] = False
-                    skipped_negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
-                    skipped_positive_idxs.append(gold_link_idx)
-                    skipped += 1
-                    continue
-                else:
-                    min_neg_mens = min(min_neg_mens, len(neg_mens))
-                negative_men_inputs.append(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
-                negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
                 # Add the positive example
                 positive_idxs.append(gold_link_idx)
+                if not use_rand_negs:
+                    # Retrieve the pre-computed nearest neighbours
+                    knn_dict_idxs = dict_nns[mention_idx]
+                    knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
+                    knn_men_idxs = men_nns[mention_idx][men_nns[mention_idx] != -1]
+                    knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
+                    if within_doc:
+                        knn_men_idxs, _ = filter_by_context_doc_id(knn_men_idxs,
+                                                                train_context_doc_ids[mention_idx],
+                                                                train_context_doc_ids, return_numpy=True)
+                    # Add the negative examples
+                    neg_mens = list(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
+                    # Track queries with no valid mention negatives
+                    if len(neg_mens) == 0:
+                        context_inputs_mask[m_embed_idx] = False
+                        skipped_negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
+                        skipped_positive_idxs.append(gold_link_idx)
+                        skipped += 1
+                        continue
+                    else:
+                        min_neg_mens = min(min_neg_mens, len(neg_mens))
+                    negative_men_inputs.append(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
+                    negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
 
-            if len(negative_men_inputs) == 0:
-                continue
-
-            knn_men = min_neg_mens
-            filtered_negative_men_inputs = []
-            for row in negative_men_inputs:
-                filtered_negative_men_inputs += list(row[:knn_men])
-            negative_men_inputs = filtered_negative_men_inputs
-
-            assert len(negative_dict_inputs) == (len(mention_embeddings) - skipped) * knn_dict
-            assert len(negative_men_inputs) == (len(mention_embeddings) - skipped) * knn_men
-
-            total_skipped += skipped
-            total_knn_men_negs += knn_men
-
-            negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs)))
-            negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs)))
             positive_embeds = []
             for pos_idx in positive_idxs:
                 if pos_idx < n_entities:
@@ -701,47 +688,69 @@ def main(params):
             positive_embeds = torch.cat(positive_embeds)
             context_inputs = batch_context_inputs[context_inputs_mask]
             context_inputs = context_inputs.cuda()
-            label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
 
-            loss_dual_negs = loss_ent_negs = 0
+            if use_rand_negs:
+                loss, _ = reranker(context_inputs, mst_data={'positive_embeds': positive_embeds.cuda()}, rand_negs=True)
+            else:
+                if len(negative_men_inputs) == 0:
+                    continue
 
-            # FIX: for error scenario of less number of examples than number of GPUs while using Data Parallel
-            data_parallel_batch_size_check = negative_men_inputs.shape[0] >= n_gpu and negative_dict_inputs.shape[0] >= n_gpu
-            if data_parallel_batch_size_check:
-                loss_dual_negs, _ = reranker(context_inputs, label_input=label_inputs, mst_data={
-                    'positive_embeds': positive_embeds.cuda(),
-                    'negative_dict_inputs': negative_dict_inputs.cuda(),
-                    'negative_men_inputs': negative_men_inputs.cuda()
-                }, pos_neg_loss=params["pos_neg_loss"])
+                knn_men = min_neg_mens
+                filtered_negative_men_inputs = []
+                for row in negative_men_inputs:
+                    filtered_negative_men_inputs += list(row[:knn_men])
+                negative_men_inputs = filtered_negative_men_inputs
 
-            skipped_context_inputs = []
-            if skipped > 0 and not params["within_doc_skip_strategy"]:
-                skipped_negative_dict_inputs = torch.tensor(
-                    list(map(lambda x: entity_dict_vecs[x].numpy(), skipped_negative_dict_inputs)))
-                skipped_positive_embeds = []
-                for pos_idx in skipped_positive_idxs:
-                    if pos_idx < n_entities:
-                        pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda(),
-                                                              requires_grad=True)
-                    else:
-                        pos_embed = reranker.encode_context(
-                            train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda(), requires_grad=True)
-                    skipped_positive_embeds.append(pos_embed)
-                skipped_positive_embeds = torch.cat(skipped_positive_embeds)
-                skipped_context_inputs = batch_context_inputs[~np.array(context_inputs_mask)]
-                skipped_context_inputs = skipped_context_inputs.cuda()
-                skipped_label_inputs = torch.tensor([[1] + [0] * (knn_dict)] * len(skipped_context_inputs),
-                                            dtype=torch.float32).cuda()
+                assert len(negative_dict_inputs) == (len(mention_embeddings) - skipped) * knn_dict
+                assert len(negative_men_inputs) == (len(mention_embeddings) - skipped) * knn_men
 
-                data_parallel_batch_size_check = skipped_negative_dict_inputs.shape[0] >= n_gpu
+                total_skipped += skipped
+                total_knn_men_negs += knn_men
+
+                negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs)))
+                negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs)))
+                
+                label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
+
+                loss_dual_negs = loss_ent_negs = 0
+
+                # FIX: for error scenario of less number of examples than number of GPUs while using Data Parallel
+                data_parallel_batch_size_check = negative_men_inputs.shape[0] >= n_gpu and negative_dict_inputs.shape[0] >= n_gpu
                 if data_parallel_batch_size_check:
-                    loss_ent_negs, _ = reranker(skipped_context_inputs, label_input=skipped_label_inputs, mst_data={
-                        'positive_embeds': skipped_positive_embeds.cuda(),
-                        'negative_dict_inputs': skipped_negative_dict_inputs.cuda(),
-                        'negative_men_inputs': None
+                    loss_dual_negs, _ = reranker(context_inputs, label_input=label_inputs, mst_data={
+                        'positive_embeds': positive_embeds.cuda(),
+                        'negative_dict_inputs': negative_dict_inputs.cuda(),
+                        'negative_men_inputs': negative_men_inputs.cuda()
                     }, pos_neg_loss=params["pos_neg_loss"])
 
-            loss = ((loss_dual_negs * len(context_inputs) + loss_ent_negs * len(skipped_context_inputs)) / (len(context_inputs) + len(skipped_context_inputs))) / grad_acc_steps
+                skipped_context_inputs = []
+                if skipped > 0 and not params["within_doc_skip_strategy"]:
+                    skipped_negative_dict_inputs = torch.tensor(
+                        list(map(lambda x: entity_dict_vecs[x].numpy(), skipped_negative_dict_inputs)))
+                    skipped_positive_embeds = []
+                    for pos_idx in skipped_positive_idxs:
+                        if pos_idx < n_entities:
+                            pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda(),
+                                                                requires_grad=True)
+                        else:
+                            pos_embed = reranker.encode_context(
+                                train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda(), requires_grad=True)
+                        skipped_positive_embeds.append(pos_embed)
+                    skipped_positive_embeds = torch.cat(skipped_positive_embeds)
+                    skipped_context_inputs = batch_context_inputs[~np.array(context_inputs_mask)]
+                    skipped_context_inputs = skipped_context_inputs.cuda()
+                    skipped_label_inputs = torch.tensor([[1] + [0] * (knn_dict)] * len(skipped_context_inputs),
+                                                dtype=torch.float32).cuda()
+
+                    data_parallel_batch_size_check = skipped_negative_dict_inputs.shape[0] >= n_gpu
+                    if data_parallel_batch_size_check:
+                        loss_ent_negs, _ = reranker(skipped_context_inputs, label_input=skipped_label_inputs, mst_data={
+                            'positive_embeds': skipped_positive_embeds.cuda(),
+                            'negative_dict_inputs': skipped_negative_dict_inputs.cuda(),
+                            'negative_men_inputs': None
+                        }, pos_neg_loss=params["pos_neg_loss"])
+
+                loss = ((loss_dual_negs * len(context_inputs) + loss_ent_negs * len(skipped_context_inputs)) / (len(context_inputs) + len(skipped_context_inputs))) / grad_acc_steps
 
             if isinstance(loss, torch.Tensor):
                 tr_loss += loss.item()

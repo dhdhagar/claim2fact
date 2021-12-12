@@ -35,7 +35,7 @@ patterns_optimizer = {
     'all': ['additional', 'bert_model.encoder.layer', 'bert_model.embeddings'],
 }
 
-def get_bert_optimizer(models, type_optimization, learning_rate, fp16=False):
+def get_bert_optimizer(models, type_optimization, learning_rate, fp16=False, correct_bias=False):
     """ Optimizes the network with AdamWithDecay
     """
     if type_optimization not in patterns_optimizer:
@@ -71,7 +71,7 @@ def get_bert_optimizer(models, type_optimization, learning_rate, fp16=False):
     optimizer = AdamW(
         optimizer_grouped_parameters, 
         lr=learning_rate, 
-        correct_bias=False
+        correct_bias=correct_bias
     )
 
     if fp16:

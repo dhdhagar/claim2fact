@@ -148,6 +148,7 @@ def get_optimizer(model, params):
         params["type_optimization"],
         params["learning_rate"],
         fp16=params.get("fp16"),
+        correct_bias=params["opt_bias_correction"],
     )
 
 

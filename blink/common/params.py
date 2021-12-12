@@ -356,6 +356,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--use_rand_negs", action="store_true",
             help="Whether to use random in-batch negatives for training instead of hard k-NN negatives.",
         )
+        parser.add_argument(
+            "--opt_bias_correction", action="store_true",
+            help="Whether to implement bias correction as in original ADAM implementation or omit it as done in BERT (Devlin et al).",
+        )
 
 
     def add_eval_args(self, args=None):

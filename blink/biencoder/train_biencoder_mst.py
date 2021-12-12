@@ -846,9 +846,11 @@ def main(params):
 
     # save the best model in the parent_dir
     if best_score > best_during_training:
-        logger.info(f"Best performance in: epoch_{best_epoch_idx}: {best_score * 100} %")
+        logger.info(f"Best performance in epoch: {best_epoch_idx} - {best_score * 100} %")
+        logger.info(f"Best model saved at {os.path.join(model_output_path, f'epoch_{best_epoch_idx}')}")
     else:
-        logger.info(f"Best performance in: best_model: epoch {best_during_training_epoch}, {best_during_training_pctg:.1f}%: {best_during_training * 100} %")
+        logger.info(f"Best performance in epoch: {best_during_training_epoch} ({best_during_training_pctg:.1f}%) - {best_during_training * 100} %")
+        logger.info(f"Best model saved at {os.path.join(model_output_path, 'best_model')}")
     # params["path_to_model"] = os.path.join(
     #     model_output_path, "epoch_{}".format(best_epoch_idx)
     # )

@@ -443,7 +443,7 @@ def main(params):
             force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"],
             probe_mult_factor=params['probe_mult_factor'], within_doc=within_doc, context_doc_ids=valid_context_doc_ids
         )
-        logger.info(f"Baseline evaluation: {best_during_training * 100} %")
+        logger.info(f"Baseline evaluation: {best_during_training} %")
 
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
         model.train()
@@ -808,7 +808,7 @@ def main(params):
                             best_during_training = eval_accuracy
                             best_during_training_epoch = epoch_idx
                             best_during_training_pctg = (step+1)/len(train_dataloader) * 100
-                            logger.info(f"New best accuracy on the development dataset: {best_during_training * 100} %")
+                            logger.info(f"New best accuracy on the development dataset: {best_during_training} %")
                             intermediate_output_path = os.path.join(model_output_path, "best_model")
                             utils.save_model(model, tokenizer, intermediate_output_path)
                             logger.info(f"Model saved at {intermediate_output_path}")
@@ -846,10 +846,10 @@ def main(params):
 
     # save the best model in the parent_dir
     if best_score > best_during_training:
-        logger.info(f"Best performance in epoch: {best_epoch_idx} - {best_score * 100} %")
+        logger.info(f"Best performance in epoch: {best_epoch_idx} - {best_score} %")
         logger.info(f"Best model saved at {os.path.join(model_output_path, f'epoch_{best_epoch_idx}')}")
     else:
-        logger.info(f"Best performance in epoch: {best_during_training_epoch} ({best_during_training_pctg:.1f}%) - {best_during_training * 100} %")
+        logger.info(f"Best performance in epoch: {best_during_training_epoch} ({best_during_training_pctg:.1f}%) - {best_during_training} %")
         logger.info(f"Best model saved at {os.path.join(model_output_path, 'best_model')}")
     # params["path_to_model"] = os.path.join(
     #     model_output_path, "epoch_{}".format(best_epoch_idx)

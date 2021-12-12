@@ -426,12 +426,24 @@ def main(params):
 
     best_epoch_idx = -1
     best_score = -1
+    best_during_training, best_during_training_epoch, best_during_training_pctg = -1, -1, -1
     num_train_epochs = params["num_train_epochs"]
     
     init_base_model_run = True if params.get("path_to_model", None) is None else False
     init_run_pkl_path = os.path.join(pickle_src_path, f'init_run_{"type" if use_types else "notype"}.t7')
 
     dict_embed_data = None
+
+    # Do an initial eval for baseline in order to determine if during-training models should be saved or not
+    if params["save_interval"] != -1:
+        best_during_training, _ = evaluate(
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu,
+            entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"],
+            use_types=use_types or params["use_types_for_eval"], embed_batch_size=params["embed_batch_size"],
+            force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"],
+            probe_mult_factor=params['probe_mult_factor'], within_doc=within_doc, context_doc_ids=valid_context_doc_ids
+        )
+        logger.info(f"Baseline evaluation: {best_during_training * 100} %")
 
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
         model.train()
@@ -783,7 +795,7 @@ def main(params):
             if params["eval_interval"] != -1:
                 if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                     logger.info("Evaluation on the development dataset")
-                    evaluate(
+                    eval_accuracy, _ = evaluate(
                         reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu,
                         entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"],
                         use_types=use_types or params["use_types_for_eval"], embed_batch_size=params["embed_batch_size"],
@@ -791,6 +803,15 @@ def main(params):
                         probe_mult_factor=params['probe_mult_factor'], within_doc=within_doc,
                         context_doc_ids=valid_context_doc_ids
                     )
+                    if params["save_interval"] != -1:
+                        if eval_accuracy > best_during_training:
+                            best_during_training = eval_accuracy
+                            best_during_training_epoch = epoch_idx
+                            best_during_training_pctg = (step+1)/len(train_dataloader) * 100
+                            logger.info(f"New best accuracy on the development dataset: {best_during_training * 100} %")
+                            intermediate_output_path = os.path.join(model_output_path, "best_model")
+                            utils.save_model(model, tokenizer, intermediate_output_path)
+                            logger.info(f"Model saved at {intermediate_output_path}")
                     model.train()
                     logger.info("\n")
 
@@ -824,12 +845,15 @@ def main(params):
     logger.info("The training took {} minutes\n".format(execution_time))
 
     # save the best model in the parent_dir
-    logger.info("Best performance in epoch: {}".format(best_epoch_idx))
-    params["path_to_model"] = os.path.join(
-        model_output_path, "epoch_{}".format(best_epoch_idx)
-    )
-    utils.save_model(reranker.model, tokenizer, model_output_path)
-    logger.info(f"Best model saved at {model_output_path}")
+    if best_score > best_during_training:
+        logger.info(f"Best performance in: epoch_{best_epoch_idx}: {best_score * 100} %")
+    else:
+        logger.info(f"Best performance in: best_model: epoch {best_during_training_epoch}, {best_during_training_pctg:.1f}%: {best_during_training * 100} %")
+    # params["path_to_model"] = os.path.join(
+    #     model_output_path, "epoch_{}".format(best_epoch_idx)
+    # )
+    # utils.save_model(reranker.model, tokenizer, model_output_path)
+    # logger.info(f"Best model saved at {model_output_path}")
 
 
 if __name__ == "__main__":

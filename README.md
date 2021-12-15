@@ -4,10 +4,8 @@ _(Fool Me Once: Supervised Clustering for Fact-Checked Claim Retrieval)_
 
 ---
 
-Thanks to [arboEL](https://github.com/dhdhagar/arboEL) and [BLINK](https://github.com/facebookresearch/BLINK) for the 
-infrastructure of this project!
-
 ## Overview
+This project addresses the task of verified claim retrieval - an important step in the information verification pipeline, which enables real-time rumour and fake news detection, thus preventing false claims from becoming "viral".
 
 ## Setting up
 
@@ -15,72 +13,109 @@ infrastructure of this project!
 [miniconda](https://docs.conda.io/en/latest/miniconda.html))
 - Create an environment and install dependencies 
     ```bash
-    conda create -n blink37 -y python=3.7 && conda activate blink37 && pip install -r requirements.txt && conda install cython pytorch==1.4.0 torchvision==0.5.0 cudatoolkit=10.1 -c pytorch
+    conda create -n claim2fact -y python=3.7 && conda activate claim2fact && pip install -r requirements.txt && conda install cython pytorch==1.4.0 torchvision==0.5.0 cudatoolkit=10.1 -c pytorch
     ```
-- Build cluster-linking special_partition function (from Cython)
+- Build cluster-linking `special_partition` function (from Cython)
     ```bash
     cd blink/biencoder/special_partition; python setup.py build_ext --inplace
     ```
 - Our setup assumes GPU availability
-  - The code for our paper was run using 2 NVIDIA Quadro RTX 8000
+  - Experiments in our work were run using a single 16GB Tesla P100 GPU.
 
 ## Datasets
 
-- [MedMentions](https://github.com/chanzuckerberg/MedMentions) (full): The MedMentions corpus
-consists of 4,392 papers (Titles and Abstracts) randomly selected from among papers 
-released on PubMed in 2016, that were in the biomedical field, published in the 
-English language, and had both a Title and an Abstract.
-- [ZeShEL](https://github.com/lajanugen/zeshel): The Zero Shot Entity Linking dataset 
-was constructed using multiple sub-domains in Wikia from FANDOM with automatically 
-extracted labeled mentions using hyper-links.
+- [Learning from Fact Checkers](https://github.com/nguyenvo09/LearningFromFactCheckers): The FC-Tweets dataset, created by Vo and Lee (2019), contains claim tweets that each have a corresponding fact-checking URL pointing to articles from two fact-checking databases - Snopes and PolitiFact. PolitiFact rates the authenticity of claims made by politicians and other prominent personalities, while Snopes fact-checks myths and rumors. There are 73,203 claim tweets-to-fact URL mappings in the dataset.
 
-## Pre-processing
+## Data Pre-processing
 
-- For MedMentions
+**TODO: modify to call correct scripts**
+```bash
+# Create the entity dictionary
+python blink/preprocess/medmentions_dictionary.py
+# Pre-process the query mentions
+python blink/preprocess/medmentions_preprocess.py
+```
+
+## Baseline Scripts (**TODO**)
+
+## Training Scripts
+
+### Full-Text Dataset
+
+- In-Batch
   ```bash
-  # Create the entity dictionary
-  python blink/preprocess/medmentions_dictionary.py
-  # Pre-process the query mentions
-  python blink/preprocess/medmentions_preprocess.py
+  python blink/biencoder/train_biencoder.py --num_train_epochs=5 --data_path=data/learnffc/processed --output_path=models/trained/learnffc/in_batch --learning_rate=1e-05 --train_batch_size=128 --gradient_accumulation_steps=8 --eval_batch_size=16 --eval_interval=2000 --lowercase --max_seq_length=512 --max_cand_length=384 --data_parallel
   ```
-- For ZeShEL
+- k-NN Negatives
   ```bash
-  # Create the entity dictionary
-  python blink/preprocess/zeshel_dictionary.py
-  # Pre-process the query mentions
-  python blink/preprocess/zeshel_preprocess.py
+  python blink/biencoder/train_biencoder_mult.py --data_path=data/learnffc/processed --pickle_src_path=models/trained/learnffc --output_path=models/trained/learnffc/knn --num_train_epochs=2 --learning_rate=1e-05 --train_batch_size=2 --eval_batch_size=16 --force_exact_search --pos_neg_loss --eval_interval=2000 --lowercase --data_parallel --max_seq_length=512 --max_cand_length=384 --knn=64
   ```
-  
-## Bi-encoder Training
+- MST-based
+  ```bash
+  python blink/biencoder/train_biencoder_mst.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/arbo --pickle_src_path=models/trained/learnffc --num_train_epochs=5 --learning_rate=1e-05 --train_batch_size=128 --gradient_accumulation_steps=8 --eval_batch_size=8 --force_exact_search --eval_interval=75 --max_seq_length=512 --max_cand_length=384 --lowercase --use_rand_negs --data_parallel
+  ```
+- 1-NN Positive
+  ```bash
+  python blink/biencoder/train_biencoder_mst.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/1nn --pickle_src_path=models/trained/learnffc --num_train_epochs=5 --learning_rate=1e-05 --train_batch_size=128 --gradient_accumulation_steps=8 --eval_batch_size=8 --force_exact_search --eval_interval=75 --max_seq_length=512 --max_cand_length=384 --lowercase --use_rand_negs --gold_arbo_knn=1 --data_parallel
+  ```
 
-### MST
-Example command for MedMentions
-```bash
-python blink/biencoder/train_biencoder_mst.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/pos_neg_loss/no_type --pickle_src_path=models/trained/medmentions --num_train_epochs=5 --train_batch_size=128 --gradient_accumulation_steps=4 --eval_interval=10000 --pos_neg_loss --force_exact_search --embed_batch_size=3500 --data_parallel
-```
+### Summary Dataset
 
-### k-NN negatives
-Example command for MedMentions
-```bash
-python blink/biencoder/train_biencoder_mult.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions/pos_neg_loss/no_type --pickle_src_path=models/trained/medmentions --num_train_epochs=5 --train_batch_size=128 --gradient_accumulation_steps=4 --eval_interval=10000 --pos_neg_loss --force_exact_search --embed_batch_size=3500 --data_parallel
-```
+- In-Batch
+  ```bash
+  python blink/biencoder/train_biencoder.py --num_train_epochs=5 --data_path=data/learnffc/processed --output_path=models/trained/learnffc/summary/in_batch --learning_rate=1e-05 --train_batch_size=128 --gradient_accumulation_steps=16 --eval_batch_size=8 --eval_interval=2000 --lowercase --max_seq_length=512 --max_cand_length=384 --use_desc_summaries
+  ```
+- k-NN Negatives
+  ```bash
+  python blink/biencoder/train_biencoder_mult.py --data_path=data/learnffc/processed --pickle_src_path=models/trained/learnffc/summary --output_path=models/trained/learnffc/summary/knn --num_train_epochs=2 --learning_rate=1e-05 --train_batch_size=2 --eval_batch_size=16 --force_exact_search --pos_neg_loss --eval_interval=2000 --lowercase --data_parallel --max_seq_length=512 --max_cand_length=384 --knn=64 --use_desc_summaries
+  ```
+- MST-based
+  ```bash
+  python blink/biencoder/train_biencoder_mst.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/summary/arbo --pickle_src_path=models/trained/learnffc/summary --num_train_epochs=5 --learning_rate=1e-05 --train_batch_size=128 --gradient_accumulation_steps=8 --eval_batch_size=8 --force_exact_search --eval_interval=75 --max_seq_length=512 --max_cand_length=384 --lowercase --use_rand_negs --data_parallel --use_desc_summaries --save_interval=0
+  ```
+- 1-NN Positive
+  ```bash
+  python blink/biencoder/train_biencoder_mst.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/summary/1nn --pickle_src_path=models/trained/learnffc/summary --num_train_epochs=5 --learning_rate=1e-05 --train_batch_size=128 --gradient_accumulation_steps=8 --eval_batch_size=8 --force_exact_search --eval_interval=75 --max_seq_length=512 --max_cand_length=384 --lowercase --use_rand_negs --gold_arbo_knn=1 --data_parallel --use_desc_summaries --save_interval=0
+  ```
 
-### In-batch negatives
-Example command for MedMentions
-```bash
-python blink/biencoder/train_biencoder.py --bert_model=models/biobert-base-cased-v1.1 --num_train_epochs=5 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_blink --data_parallel --train_batch_size=128 --eval_batch_size=128 --eval_interval=10000
-```
+## Inference Scripts
 
-## Bi-encoder Inference
+### Full-text Dataset
 
-### Linking
-Example command for MedMentions
-```bash
-python blink/biencoder/eval_cluster_linking.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/eval/pos_neg_loss/no_type/wo_type --pickle_src_path=models/trained/medmentions/eval --path_to_model=models/trained/medmentions_mst/pos_neg_loss/no_type/epoch_best_5th/pytorch_model.bin --recall_k=64 --embed_batch_size=3500 --force_exact_search --data_parallel
-```
+- In-Batch
+  ```bash
+  python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/in_batch/eval --pickle_src_path=models/trained/learnffc --path_to_model=models/trained/learnffc/in_batch/pytorch_model.bin --lowercase --recall_k=64 --data_parallel --force_exact_search --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256 --data_parallel
+  ```
+- k-NN Negatives
+  ```bash
+  python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/knn/eval --pickle_src_path=models/trained/learnffc --path_to_model=models/trained/learnffc/knn/pytorch_model.bin --lowercase --recall_k=64 --force_exact_search --data_parallel --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256
+  ```
+- MST-based
+  ```bash
+  python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/arbo/eval --pickle_src_path=models/trained/learnffc --path_to_model=models/trained/learnffc/arbo/pytorch_model.bin --lowercase --recall_k=64 --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256 --force_exact_search --data_parallel
+  ```
+- 1-NN Positive
+  ```bash
+  python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/1nn/eval --pickle_src_path=models/trained/learnffc --path_to_model=models/trained/learnffc/1nn/pytorch_model.bin --lowercase --recall_k=64 --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256 --force_exact_search --data_parallel
+  ```
+### Summary Dataset
 
-### Discovery
-Example command for MedMentions
-```bash
-python blink/biencoder/eval_entity_discovery.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/eval/pos_neg_loss/directed --pickle_src_path=models/trained/medmentions/eval --embed_data_path=models/trained/medmentions_mst/eval/pos_neg_loss --use_types --force_exact_search --graph_mode=directed --exact_threshold=127.87733985396665 --exact_knn=8 --data_parallel
-```
+- In-Batch
+  ```bash
+  python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/summary/in_batch/eval --pickle_src_path=models/trained/learnffc/summary --path_to_model=models/trained/learnffc/summary/in_batch/pytorch_model.bin --lowercase --recall_k=64 --data_parallel --force_exact_search --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256 --use_desc_summaries
+  ```
+- k-NN Negatives
+  ```bash
+  python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/summary/knn/eval --pickle_src_path=models/trained/learnffc/summary --path_to_model=models/trained/learnffc/summary/knn/pytorch_model.bin --lowercase --recall_k=64 --force_exact_search --data_parallel --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256 --use_desc_summaries
+  ```
+- MST-based
+  ```bash
+  python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/summary/arbo/eval --pickle_src_path=models/trained/learnffc/summary --path_to_model=models/trained/learnffc/summary/arbo/pytorch_model.bin --lowercase --recall_k=64 --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256 --force_exact_search --data_parallel --use_desc_summaries
+  ```
+- 1-NN Positive
+  ```bash
+  python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/summary/1nn/eval --pickle_src_path=models/trained/learnffc/summary --path_to_model=models/trained/learnffc/summary/1nn/pytorch_model.bin --lowercase --recall_k=64 --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256 --force_exact_search --data_parallel --use_desc_summaries
+  ```
+## Acknowledgments
+
+Thanks to [arboEL](https://github.com/dhdhagar/arboEL) and [BLINK](https://github.com/facebookresearch/BLINK) for the infrastructure of this project!

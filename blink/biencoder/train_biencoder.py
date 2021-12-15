@@ -7,7 +7,7 @@
 #
 import os
 import argparse
-import pickle
+import pickle5 as pickle
 import torch
 import json
 import sys
@@ -164,6 +164,7 @@ def main(params):
         silent=params["silent"],
         logger=logger,
         debug=params["debug"],
+        params=params
     )
     if params["shuffle"]:
         train_sampler = RandomSampler(train_tensor_data)
@@ -188,6 +189,7 @@ def main(params):
         silent=params["silent"],
         logger=logger,
         debug=params["debug"],
+        params=params
     )
     valid_sampler = SequentialSampler(valid_tensor_data)
     valid_dataloader = DataLoader(

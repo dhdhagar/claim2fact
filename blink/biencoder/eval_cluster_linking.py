@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
 from tqdm import tqdm
-import pickle
+import pickle5 as pickle
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from special_partition.special_partition import cluster_linking_partition
@@ -261,7 +261,7 @@ def main(params):
         with open(test_dictionary_pkl_path, 'rb') as read_handle:
             test_dictionary = pickle.load(read_handle)
         entity_dictionary_loaded = True
-    if os.path.isfile(test_tensor_data_pkl_path) and os.path.isfile(test_mention_data_pkl_path):
+    if entity_dictionary_loaded and os.path.isfile(test_tensor_data_pkl_path) and os.path.isfile(test_mention_data_pkl_path):
         print("Loading stored processed test data...")
         with open(test_tensor_data_pkl_path, 'rb') as read_handle:
             test_tensor_data = pickle.load(read_handle)
@@ -292,7 +292,8 @@ def main(params):
             logger=logger,
             debug=params["debug"],
             knn=knn,
-            dictionary_processed=entity_dictionary_loaded
+            dictionary_processed=entity_dictionary_loaded,
+            use_desc_summaries=params["use_desc_summaries"],
         )
         print("Saving processed test data...")
         if not entity_dictionary_loaded:
@@ -390,7 +391,7 @@ def main(params):
                 embed_data['dict_idxs_by_type'] = dict_idxs_by_type
                 embed_data['men_idxs_by_type'] = men_idxs_by_type
             # NOTE: Cannot pickle faiss index because it is a SwigPyObject
-            torch.save(embed_data, embed_data_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
+            torch.save(embed_data, embed_data_path, pickle_protocol=4)
 
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
         recall_idxs = [0.]*params['recall_k']

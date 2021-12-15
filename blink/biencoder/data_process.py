@@ -9,6 +9,8 @@
 import logging
 import torch
 from tqdm import tqdm, trange
+import os
+import pickle5 as pickle
 from torch.utils.data import DataLoader, TensorDataset
 
 from pytorch_transformers.tokenization_bert import BertTokenizer
@@ -28,47 +30,25 @@ def get_context_representation(
     sample,
     tokenizer,
     max_seq_length,
-    mention_key="mention",
-    context_key="context",
-    ent_start_token=ENT_START_TAG,
-    ent_end_token=ENT_END_TAG,
+    mention_key="mention"
 ):
-    mention_tokens = []
-    if sample[mention_key] and len(sample[mention_key]) > 0:
-        mention_tokens = tokenizer.tokenize(sample[mention_key])
-        mention_tokens = [ent_start_token] + mention_tokens + [ent_end_token]
-
-    context_left = sample[context_key + "_left"]
-    context_right = sample[context_key + "_right"]
-    context_left = tokenizer.tokenize(context_left)
-    context_right = tokenizer.tokenize(context_right)
-
-    left_quota = (max_seq_length - len(mention_tokens)) // 2 - 1
-    right_quota = max_seq_length - len(mention_tokens) - left_quota - 2
-    left_add = len(context_left)
-    right_add = len(context_right)
-    if left_add <= left_quota:
-        if right_add > right_quota:
-            right_quota += left_quota - left_add
-    else:
-        if right_add <= right_quota:
-            left_quota += right_quota - right_add
-
-    context_tokens = (
-        context_left[-left_quota:] + mention_tokens + context_right[:right_quota]
-    )
-
-    context_tokens = ["[CLS]"] + context_tokens + ["[SEP]"]
-    input_ids = tokenizer.convert_tokens_to_ids(context_tokens)
+    mention_tokens = tokenizer.tokenize(sample[mention_key])
+    mention_tokens = ["[CLS]"] + mention_tokens[:max_seq_length - 2] + ["[SEP]"]
+    input_ids = tokenizer.convert_tokens_to_ids(mention_tokens)
     padding = [0] * (max_seq_length - len(input_ids))
     input_ids += padding
     assert len(input_ids) == max_seq_length
-
     return {
-        "tokens": context_tokens,
+        "tokens": mention_tokens,
         "ids": input_ids,
     }
 
+def filter_learnffc_cand_title(candidate_title):
+    candidate_title = candidate_title.replace('PolitiFact | ', '')
+    candidate_title = candidate_title.replace(' | Snopes.com', '')
+    candidate_title = candidate_title.replace('PolitiFact ', '')
+    candidate_title = candidate_title.replace(' Snopescom', '')
+    return candidate_title
 
 def get_candidate_representation(
     candidate_desc, 
@@ -81,6 +61,7 @@ def get_candidate_representation(
     sep_token = tokenizer.sep_token
     cand_tokens = tokenizer.tokenize(candidate_desc)
     if candidate_title is not None:
+        candidate_title = filter_learnffc_cand_title(candidate_title)
         title_tokens = tokenizer.tokenize(candidate_title)
         cand_tokens = title_tokens + [title_tag] + cand_tokens
 
@@ -113,7 +94,13 @@ def process_mention_data(
     title_token=ENT_TITLE_TAG,
     debug=False,
     logger=None,
+    params=None
 ):
+    dict_fpath = os.path.join(params["data_path"], 'dictionary.pickle')
+    with open(dict_fpath, 'rb') as read_handle:
+        dictionary = pickle.load(read_handle)
+    dictionary = {str(fact["cui"]): fact for fact in dictionary}
+    
     processed_samples = []
 
     if debug:
@@ -124,10 +111,8 @@ def process_mention_data(
     else:
         iter_ = tqdm(samples)
 
-    use_world = True
-
     id_to_idx = {}
-    label_id_is_int = True
+    label_id_is_int = False  # Forcing this to be False in order to compute small int labels
 
     for idx, sample in enumerate(iter_):
         context_tokens = get_context_representation(
@@ -135,13 +120,10 @@ def process_mention_data(
             tokenizer,
             max_context_length,
             mention_key,
-            context_key,
-            ent_start_token,
-            ent_end_token,
         )
 
-        label = sample[label_key]
-        title = sample.get(title_key, None)
+        label = dictionary[str(sample["label_id"])]["description" if not params["use_desc_summaries"] else "summary"]
+        title = dictionary[str(sample["label_id"])]["title"]
         label_tokens = get_candidate_representation(
             label, tokenizer, max_cand_length, title,
         )
@@ -161,14 +143,6 @@ def process_mention_data(
             "label": label_tokens,
             "label_idx": [label_idx],
         }
-
-        # type_key = "world" if "world" in sample else "type"
-        # if type_key in sample:
-        #     src = sample[type_key]
-        #     src = world_to_id[src]
-        #     record["src"] = [src]
-        # else:
-        #     record["src"] = [0]     # pseudo src
 
         processed_samples.append(record)
 
@@ -191,9 +165,6 @@ def process_mention_data(
     cand_vecs = torch.tensor(
         select_field(processed_samples, "label", "ids"), dtype=torch.long,
     )
-    # src_vecs = torch.tensor(
-    #     select_field(processed_samples, "src"), dtype=torch.long,
-    # )
     label_idx = torch.tensor(
         select_field(processed_samples, "label_idx"), dtype=torch.long,
     )
@@ -203,6 +174,5 @@ def process_mention_data(
         "label_idx": label_idx,
     }
 
-    # data["src"] = src_vecs
-    tensor_data = TensorDataset(context_vecs, cand_vecs, label_idx) # src_vecs
+    tensor_data = TensorDataset(context_vecs, cand_vecs, label_idx)
     return data, tensor_data

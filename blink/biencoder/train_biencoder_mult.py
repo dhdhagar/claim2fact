@@ -291,7 +291,8 @@ def main(params):
                 logger=logger,
                 debug=params["debug"],
                 knn=knn,
-                dictionary_processed=entity_dictionary_loaded
+                dictionary_processed=entity_dictionary_loaded,
+                use_desc_summaries=params["use_desc_summaries"],
             )
             print("Saving processed train data...")
             if not entity_dictionary_loaded:
@@ -349,7 +350,8 @@ def main(params):
             logger=logger,
             debug=params["debug"],
             knn=knn,
-            dictionary_processed=True
+            dictionary_processed=True,
+            use_desc_summaries=params["use_desc_summaries"],
         )
         print("Saving processed valid data...")
         with open(valid_tensor_data_pkl_path, 'wb') as write_handle:
@@ -473,6 +475,9 @@ def main(params):
             context_inputs, candidate_idxs, n_gold, mention_idxs = batch
             mention_embeddings = train_men_embeddings[mention_idxs.cpu()]
             
+            if len(mention_embeddings.shape) == 1:
+                mention_embeddings = np.expand_dims(mention_embeddings, axis=0)
+
             # context_inputs: Shape: batch x token_len
             candidate_inputs = np.array([], dtype=np.int) # Shape: (batch*knn) x token_len
             label_inputs = torch.tensor([[1]+[0]*(knn-1)]*n_gold.sum(), dtype=torch.float32) # Shape: batch(with split rows) x knn

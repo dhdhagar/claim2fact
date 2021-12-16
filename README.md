@@ -42,7 +42,7 @@ There are 2 Jupyter notebooks for the baselines:
 
  ```blink/baselines/TF-IDF+kNN.ipynb```: Contains code and analysis for the first two baselines in the paper: 1) <em>TF-IDF  vector  of  the  FC  article  +  1-NN classification</em> and 2) <em>TF-IDF vector of the FC article summary+ 1-NN classification</em>
  
-```blink/baselines/TF-IDF+SVM.ipynb```: Contains code and analysis for the third baseline <em>TF-IDF vector of the claim tweets + SVMmulticlass classification</em>
+```blink/baselines/TF-IDF+SVM.ipynb```: Contains code and analysis for the third baseline <em>TF-IDF vector of the claim tweets + SVM multiclass classification</em>
 
 ## Training Scripts
 

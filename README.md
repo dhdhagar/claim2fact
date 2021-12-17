@@ -128,6 +128,18 @@ There are 2 Jupyter notebooks for the baselines:
   ```bash
   python blink/biencoder/eval_cluster_linking.py --data_path=data/learnffc/processed --output_path=models/trained/learnffc/summary/1nn/eval --pickle_src_path=models/trained/learnffc/summary --path_to_model=models/trained/learnffc/summary/1nn/pytorch_model.bin --lowercase --recall_k=64 --max_seq_length=512 --max_cand_length=384 --embed_batch_size=256 --force_exact_search --data_parallel --use_desc_summaries
   ```
+  
+## Error Analysis
+
+These are the Jupyter notebooks used for our Model's Error Analysis:
+```bash
+-blink/analysis/ErrorAnalysis.ipynb
+-blink/analysis/Error_Analysis_fulltext_in_batch.ipynb
+-blink/analysis/Error_Analysis_fulltext_mst.ipynb
+-blink/analysis/Error_Analysis_mst_vs_in_batch.ipynb
+```
+
+
 ## Acknowledgments
 
 Thanks to [arboEL](https://github.com/dhdhagar/arboEL) and [BLINK](https://github.com/facebookresearch/BLINK) for the infrastructure of this project!

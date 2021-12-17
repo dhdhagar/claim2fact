@@ -27,13 +27,19 @@ This project addresses the task of verified claim retrieval - an important step 
 - [Learning from Fact Checkers](https://github.com/nguyenvo09/LearningFromFactCheckers): The FC-Tweets dataset, created by Vo and Lee (2019), contains claim tweets that each have a corresponding fact-checking URL pointing to articles from two fact-checking databases - Snopes and PolitiFact. PolitiFact rates the authenticity of claims made by politicians and other prominent personalities, while Snopes fact-checks myths and rumors. There are 73,203 claim tweets-to-fact URL mappings in the dataset.
 
 ## Data Pre-processing
-
-**TODO: modify to call correct scripts**
+These are the python scripts and Jupyter notebooks for Pre-processing:
 ```bash
-# Create the entity dictionary
-python blink/preprocess/medmentions_dictionary.py
-# Pre-process the query mentions
-python blink/preprocess/medmentions_preprocess.py
+# Fetching Articles from Fact-Checking URL:
+blink/preprocess/scraper.py
+blink/preprocess/Fetch_Article_Using_URL.ipynb
+# Summarizing Article Content:
+blink/preprocess/Summarization.ipynb
+# Create the KB dictionary
+blink/preprocess/Create_Dictionary_KB.ipynb
+# Fetching Complete Tweet Data:
+blink/preprocess/fetch_complete_tweet_data.ipynb
+# Pre-process the Claim Tweets
+blink/preprocess/Create_mention_jsons_Original_Tweets.ipynb
 ```
 
 ## Baseline
